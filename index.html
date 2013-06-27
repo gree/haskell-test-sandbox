@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>GREE Haskell test-sandbox by gree</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <script src="javascripts/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>GREE Haskell test-sandbox</h1>
+        <p>A framework to manage external applications for system tests</p>
+        <p class="view"><a href="https://github.com/gree/haskell-test-sandbox">View the Project on GitHub <small>gree/haskell-test-sandbox</small></a></p>
+        <ul>
+          <li><a href="https://github.com/gree/haskell-test-sandbox/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/gree/haskell-test-sandbox/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/gree/haskell-test-sandbox">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h3>
+<a name="description" class="anchor" href="#description"><span class="octicon octicon-link"></span></a>Description</h3>
+
+<p>test-sandbox is a framework to manage external applications and communicate with them via TCP or standard I/O for system testing in a sandboxed environment.
+The Test.Sandbox monad can either be used stand-alone or in conjunction with HUnit, QuickCheck and the test-framework packages to build a complete test suite.
+The API is meant to be simple to understand yet flexible enough to meet most of the needs of application testers.</p>
+
+<h3>
+<a name="features" class="anchor" href="#features"><span class="octicon octicon-link"></span></a>Features</h3>
+
+<ul>
+<li>Register, start and stop programs in a sandboxed environment.</li>
+<li>Automatic cleaning at shutdown: started processes are shutdown, temporary files are deleted.</li>
+<li>Ask the framework to provide you with random, guaranteed not bound TCP ports for your tests: no more collisions when running 2 sets of tests at the same time.</li>
+<li>Generate your temporary configuration files programatically in a secure manner.</li>
+<li>Easily share variables between your tests and modify them at runtime.</li>
+<li>Combine with the test-framework package for standardized output and XML test result generation.</li>
+<li>Use the QuickCheck library to write property tests and generate automatic test cases for your external application; enjoy the full power of the Haskell test harness, even if the application to test is written in a different language!</li>
+</ul><h3>
+<a name="examples" class="anchor" href="#examples"><span class="octicon octicon-link"></span></a>Examples</h3>
+
+<p>A simple test for the memcached NoSQL key-value store, with communication via TCP.</p>
+
+<div class="highlight highlight-haskell"><pre><span class="kr">import</span> <span class="nn">Test.Sandbox</span>
+<span class="kr">import</span> <span class="nn">Test.Sandbox.HUnit</span>
+
+<span class="nf">setup</span> <span class="ow">::</span> <span class="kt">Sandbox</span> <span class="nb">()</span>
+<span class="nf">setup</span> <span class="ow">=</span> <span class="kr">do</span>
+  <span class="n">port</span> <span class="ow">&lt;-</span> <span class="n">getPort</span> <span class="s">"memcached"</span>
+  <span class="n">register</span> <span class="s">"memcached"</span> <span class="s">"memcached"</span> <span class="p">[</span> <span class="s">"-p"</span><span class="p">,</span> <span class="n">show</span> <span class="n">port</span> <span class="p">]</span> <span class="n">def</span>
+
+<span class="nf">main</span> <span class="ow">::</span> <span class="kt">IO</span> <span class="nb">()</span>
+<span class="nf">main</span> <span class="ow">=</span> <span class="n">sandbox</span> <span class="o">$</span> <span class="kr">do</span>
+  <span class="n">setup</span>
+  <span class="n">start</span> <span class="s">"memcached"</span>
+  <span class="n">output</span> <span class="ow">&lt;-</span> <span class="n">sendTo</span> <span class="s">"memcached"</span> <span class="s">"set key 0 0 5</span><span class="se">\r\n</span><span class="s">value</span><span class="se">\r\n</span><span class="s">"</span> <span class="mi">1</span>
+  <span class="n">assertEqual</span> <span class="s">"item is stored"</span> <span class="s">"STORED</span><span class="se">\r\n</span><span class="s">"</span> <span class="n">output</span>
+</pre></div>
+
+<p>A simple hypothetic test for the "sed" UNIX command-line utility, with communication via standard I/O.</p>
+
+<div class="highlight highlight-haskell"><pre><span class="kr">import</span> <span class="nn">Test.Sandbox</span>
+<span class="kr">import</span> <span class="nn">Test.Sandbox.HUnit</span>
+
+<span class="nf">main</span> <span class="ow">::</span> <span class="kt">IO</span> <span class="nb">()</span>
+<span class="nf">main</span> <span class="ow">=</span> <span class="n">sandbox</span> <span class="o">$</span> <span class="kr">do</span>
+  <span class="n">start</span> <span class="o">=&lt;&lt;</span> <span class="n">register</span> <span class="s">"sed_regex"</span> <span class="s">"sed"</span> <span class="p">[</span> <span class="s">"-u"</span><span class="p">,</span> <span class="s">"s/a/b/"</span> <span class="p">]</span> <span class="n">def</span> <span class="p">{</span> <span class="n">psCapture</span> <span class="ow">=</span> <span class="kt">CaptureStdout</span> <span class="p">}</span>
+  <span class="n">assertEqual</span> <span class="s">"a-&gt;b"</span> <span class="s">"b</span><span class="se">\n</span><span class="s">"</span> <span class="o">=&lt;&lt;</span> <span class="n">interactWith</span> <span class="s">"sed_regex_ "</span><span class="n">a</span><span class="nf">\</span><span class="n">n</span><span class="s">" 5</span>
+</pre></div>
+
+<p>Here is how to cram the above in the Test.Framework module.</p>
+
+<div class="highlight highlight-haskell"><pre><span class="kr">import</span> <span class="nn">Test.Framework</span>
+<span class="kr">import</span> <span class="nn">Test.Framework.Providers.Sandbox</span>
+<span class="kr">import</span> <span class="nn">Test.Sandbox</span>
+<span class="kr">import</span> <span class="nn">Test.Sandbox.HUnit</span>
+
+<span class="nf">setup</span> <span class="ow">::</span> <span class="kt">Sandbox</span> <span class="nb">()</span>
+<span class="nf">setup</span> <span class="ow">=</span> <span class="n">start</span> <span class="o">=&lt;&lt;</span> <span class="n">register</span> <span class="s">"sed_s/a/b/"</span> <span class="s">"sed"</span> <span class="p">[</span> <span class="s">"-u"</span><span class="p">,</span> <span class="s">"s/a/b/"</span> <span class="p">]</span> <span class="n">def</span> <span class="p">{</span> <span class="n">psCapture</span> <span class="ow">=</span> <span class="kt">CaptureStdout</span> <span class="p">}</span>
+
+<span class="nf">main</span> <span class="ow">=</span> <span class="n">defaultMain</span> <span class="p">[</span>
+    <span class="n">sandboxTests</span> <span class="s">"sed_tests"</span> <span class="p">[</span>
+        <span class="n">sandboxTest</span> <span class="s">"setup"</span> <span class="n">setup</span>
+      <span class="p">,</span> <span class="n">sandboxTest</span> <span class="s">"sed a-&gt;b"</span> <span class="o">$</span> <span class="n">assertEqual</span> <span class="s">"a-&gt;b"</span> <span class="s">"b</span><span class="se">\n</span><span class="s">"</span> <span class="o">=&lt;&lt;</span> <span class="n">interactWith</span> <span class="s">"sed_s/a/b/"</span> <span class="s">"a</span><span class="se">\n</span><span class="s">"</span> <span class="mi">5</span>
+      <span class="p">,</span> <span class="n">sandboxTest</span> <span class="s">"sed aa-&gt;ba"</span> <span class="o">$</span> <span class="n">assertEqual</span> <span class="s">"aa-&gt;ba"</span> <span class="s">"ba</span><span class="se">\n</span><span class="s">"</span> <span class="o">=&lt;&lt;</span> <span class="n">interactWith</span> <span class="s">"sed_s/a/b/"</span> <span class="s">"aa</span><span class="se">\n</span><span class="s">"</span> <span class="mi">5</span>
+    <span class="p">]</span>
+  <span class="p">]</span>
+</pre></div>
+
+<p>Generated output</p>
+
+<div class="highlight highlight-bash"><pre>benjamin-surma@g-pc-3964:~/Documents/memcached-tests<span class="nv">$ </span>./dist/build/test/test
+<span class="o">[</span>sed_tests<span class="o">]</span>
+  <span class="o">[</span>setup<span class="o">]</span>
+
+<span class="c">##------------------------------------------------------------------------------</span>
+ <span class="c">## sed_tests end-to-end test environment                                     --</span>
+<span class="c">## ##---------------------------------------------------------------------------</span>
+-- Data directory: /tmp/sed_tests_20474
+-- Allocated ports: 
+-- Configuration files: 
+-- Registered processes: sed_s/a/b/
+--------------------------------------------------------------------------------
+
+Starting process sed_s/a/b/... Done.
+<span class="o">[</span>OK<span class="o">]</span>
+  <span class="o">[</span>sed a-&gt;b<span class="o">]</span>  <span class="o">[</span>OK<span class="o">]</span>
+  <span class="o">[</span>sed aa-&gt;ba<span class="o">]</span>  <span class="o">[</span>OK<span class="o">]</span>
+sed_tests:
+  setup: <span class="o">[</span>OK<span class="o">]</span>
+  sed a-&gt;b: <span class="o">[</span>OK<span class="o">]</span>
+  sed aa-&gt;ba: <span class="o">[</span>OK<span class="o">]</span>
+  cleaning: <span class="o">[</span>OK<span class="o">]</span>
+
+         Sandbox tests  Total      
+ Passed  4              3          
+ Failed  0              0          
+ Total   4              4          
+benjamin-surma@g-pc-3964:~/Documents/memcached-tests<span class="nv">$ </span>
+</pre></div>
+
+<h3>
+<a name="synopsis" class="anchor" href="#synopsis"><span class="octicon octicon-link"></span></a>Synopsis</h3>
+
+<p>At GREE, we spend lots of time meticulously testing our internally-developed middleware.
+We have solutions not only developed in Haskell, but also C++ and PHP, but wanted a simple and robust test framework to perform end-to-end testing, and this is how test-sandbox is born.</p>
+      </section>
+    </div>
+    <footer>
+      <p>Project maintained by <a href="https://github.com/gree">gree</a></p>
+      <p>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></p>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+    
+  </body>
+</html>
