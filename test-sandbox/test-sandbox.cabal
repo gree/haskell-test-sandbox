@@ -1,0 +1,27 @@
+Name:           test-sandbox
+Version:        0.0.1
+Cabal-Version:  >= 1.14
+Category:       Testing
+Synopsis:       Sandbox for system tests
+Description:    Allows starting and stopping previously registered programs in a sandboxed environment.
+                This package provides functions to easily communicate with the aforementioned processes
+                via TCP or standard input/output.
+License:        BSD3
+License-File:   LICENSE
+Author:         Benjamin Surma <benjamin.surma@gree.net>
+Maintainer:     Benjamin Surma <benjamin.surma@gree.net>
+Build-Type:     Simple
+
+Library
+    Exposed-modules:    Test.Sandbox
+                        Test.Sandbox.Internals
+
+    Build-Depends:      base >=4 && <5, bytestring, cereal, containers,
+                        data-default, directory, filepath, lifted-base,
+                        monad-control, monad-loops, mtl, network, process,
+                        random, random-shuffle, temporary, transformers,
+                        transformers-base, unix
+
+    Hs-source-dirs:     src
+
+    Default-Language:   Haskell2010
