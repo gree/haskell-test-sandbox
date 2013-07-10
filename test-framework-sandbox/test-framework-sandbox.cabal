@@ -36,7 +36,7 @@ Library
                         Test.Framework.Providers.Sandbox.Internals
 
     Build-Depends:      base >=4 && <5, ansi-terminal, lifted-base, mtl,
-                        temporary, test-framework, test-sandbox == 0.0.1.*,
+                        temporary, test-framework >= 0.8.0.3, test-sandbox == 0.0.1.*,
                         transformers
 
     Hs-source-dirs:     src

@@ -55,21 +55,22 @@ import Test.Framework.Providers.Sandbox.Internals
 sandboxTests :: String       -- ^ Name of the sandbox environment
              -> Sandbox Test -- ^ Test to perform
              -> Test
-sandboxTests name test = buildTest $ do
+sandboxTests name test = testGroup name [ buildTest $ do
   options <- interpretArgs =<< getArgs
-  mvar <- newEmptyMVar :: IO (MVar Int)
-  return $ mutuallyExclusive $ testGroup name [
-      buildTestBracketed $
-        withSystemTempDirectory (name ++ "_") $ \dir -> do
-          env <- newSandboxState name dir
-          (result, env') <- (runStateT . runErrorT . runSandbox) (putOptions options >> test) env
-          let cleanup = (evalStateT . runErrorT . runSandbox) (silently stopAll) env'
-                          >>= either putStrLn return
-                          >> putMVar mvar 0
-          case result of
-            Left error -> return (Test name (SandboxTest (Failure error)), cleanup)
-            Right x -> return (x, cleanup)
-    , Test "cleaning" (SandboxCleaning mvar) ]
+  if isExcluded options name then return (Test name (SandboxTest Skipped))
+    else do mvar <- newEmptyMVar :: IO (MVar Int)
+            return $ mutuallyExclusive $ testGroup name [
+                buildTestBracketed $
+                  withSystemTempDirectory (name ++ "_") $ \dir -> do
+                    env <- newSandboxState name dir
+                    (result, env') <- (runStateT . runErrorT . runSandbox) (putOptions options >> test) env
+                    let cleanup = (evalStateT . runErrorT . runSandbox) (silently stopAll) env'
+                                    >>= either putStrLn return
+                                    >> putMVar mvar 0
+                    case result of
+                      Left error -> return (Test name (SandboxTest (Failure error)), cleanup)
+                      Right x -> return (x, cleanup)
+              , Test "cleaning" (SandboxCleaning mvar) ] ]
 
 -- | Groups tests in the Sandbox monad.
 sandboxTestGroup :: String         -- ^ Test group name

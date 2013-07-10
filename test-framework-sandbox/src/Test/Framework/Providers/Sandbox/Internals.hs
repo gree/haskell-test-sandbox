@@ -20,6 +20,7 @@ import System.IO
 import Test.Framework
 import Test.Framework.Providers.API (Testlike (..), TestResultlike (..), runImprovingIO)
 import qualified Test.Framework.Providers.API as TF (liftIO)
+import Test.Framework.Runners.TestPattern
 
 import Test.Sandbox
 import Test.Sandbox.Internals
@@ -111,3 +112,11 @@ putOptions :: Either String (RunnerOptions, [String]) -> Sandbox ()
 putOptions =
   either (const $ return ())
          (\r -> maybe (return ()) (void . Test.Sandbox.Internals.putOptions . sandboxTestOptions) (ropt_test_options $ fst r))
+
+isExcluded :: Either String (RunnerOptions, [String]) -> String -> Bool
+isExcluded input name =
+  case input of
+    Left _ -> False
+    Right (options, _) -> case ropt_test_patterns options of
+                            Nothing -> False
+                            Just patterns -> not $ any (`testPatternMatches` [name]) patterns
