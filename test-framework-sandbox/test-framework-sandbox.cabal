@@ -1,5 +1,5 @@
 Name:           test-framework-sandbox
-Version:        0.0.1
+Version:        0.0.1.1
 Cabal-Version:  >= 1.14
 Category:       Testing
 Synopsis:       test-sandbox support for the test-framework package
