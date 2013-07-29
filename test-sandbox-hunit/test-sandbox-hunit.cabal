@@ -10,6 +10,15 @@ License-File:   LICENSE
 Author:         Benjamin Surma <benjamin.surma@gree.net>
 Maintainer:     Benjamin Surma <benjamin.surma@gree.net>
 Build-Type:     Simple
+Homepage:       http://gree.github.io/haskell-test-sandbox/
+Bug-Reports:    https://github.com/gree/haskell-test-sandbox/issues
+Source-Repository head
+    Type:       git
+    Location:   https://github.com/gree/haskell-test-sandbox
+Source-Repository this
+    Type:       git
+    Location:   https://github.com/gree/haskell-test-sandbox
+    Tag:        0.0.1
 
 Library
     Exposed-modules:    Test.Sandbox.HUnit
