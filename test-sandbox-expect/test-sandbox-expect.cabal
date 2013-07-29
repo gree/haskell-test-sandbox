@@ -1,5 +1,5 @@
 Name:           test-sandbox-expect
-Version:        0.0.1
+Version:        0.0.1.2
 Cabal-Version:  >= 1.14
 Category:       Testing
 Synopsis:       A simple implementation of PERL's "Expect" functionality in the Test.Sandbox monad.
@@ -16,7 +16,7 @@ Source-Repository head
 Source-Repository this
     Type:       git
     Location:   https://github.com/gree/haskell-test-sandbox
-    Tag:        0.0.1
+    Tag:        0.0.1.2
 
 Library
     Exposed-Modules:     Test.Sandbox.Expect
