@@ -90,10 +90,11 @@ pretty env =
 
 header :: SandboxState -> String
 header te =
-  "##------------------------------------------------------------------------------\n\
+  "\n\
+  \##------------------------------------------------------------------------------\n\
   \ ## " ++ title ++ replicate (72 - length title) ' ' ++ "  --\n\
   \## ##---------------------------------------------------------------------------\n"
-  where title = ssName te ++ " end-to-end test environment"
+  where title = ssName te ++ " system test environment"
 
 footer :: String
 footer =
