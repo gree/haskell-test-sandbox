@@ -90,10 +90,11 @@ pretty env =
 
 header :: SandboxState -> String
 header te =
-  "##------------------------------------------------------------------------------\n\
+  "\n\
+  \##------------------------------------------------------------------------------\n\
   \ ## " ++ title ++ replicate (72 - length title) ' ' ++ "  --\n\
   \## ##---------------------------------------------------------------------------\n"
-  where title = ssName te ++ " end-to-end test environment"
+  where title = ssName te ++ " system test environment"
 
 footer :: String
 footer =
@@ -110,6 +111,10 @@ registerProcess ::
   String -> FilePath -> [String] -> Maybe Int -> Maybe Capture
   -> Sandbox SandboxedProcess
 registerProcess name bin args wait capture = do
+  -- Validate process name
+  unless (isValidProcessName name) $
+    throwError $ "Invalid process name: " ++ name ++ "."
+  -- Register into the environment
   env <- get
   if isJust (M.lookup name (ssProcesses env)) then
     throwError $ "Process " ++ name ++ " is already registered in the test environment."
@@ -117,6 +122,12 @@ registerProcess name bin args wait capture = do
             put env { ssProcesses = M.insert name sp (ssProcesses env)
                     , ssProcessOrder = ssProcessOrder env ++ [name] }
             return sp
+
+isValidProcessName :: String -> Bool
+isValidProcessName s = not (null s)
+    && isAlpha (head s)
+    && all isAllowed (tail s)
+  where isAllowed c = isAlphaNum c || c == '_'
 
 getProcess :: String -> Sandbox SandboxedProcess
 getProcess name = do
@@ -300,14 +311,15 @@ getProcessBinary sp = do
 
 findExecutables :: [FilePath] -> IO [FilePath]
 findExecutables paths =
-   liftM catMaybes $ join $ liftM (mapM tryBinary) $ mapM expand paths
+   liftM catMaybes $ mapM tryBinary paths
 
 tryBinary :: FilePath -> IO (Maybe FilePath)
-tryBinary bin = do
-  bin' <- tryIOError . canonicalizePath =<< expand bin
-  case bin' of
-    Left _ -> findExecutable bin
-    Right bin'' -> findExecutable bin''
+tryBinary path = do
+  expandedPath <- expand path
+  canonicalizedPath <- tryIOError $ canonicalizePath expandedPath
+  case canonicalizedPath of
+    Left _ -> findExecutable expandedPath
+    Right realPath -> findExecutable realPath
 
 getProcessCandidateBinaries :: SandboxedProcess -> [FilePath]
 getProcessCandidateBinaries sp =
@@ -315,7 +327,7 @@ getProcessCandidateBinaries sp =
   where binary = spBinary sp
         pathBinary = takeFileName binary
         cwdBinary = "." </> pathBinary
-        userBinary = '$' : map toUpper (spName sp ++ "_bin")
+        userBinary = "${" ++ map toUpper (spName sp ++ "_bin") ++ "}"
 
 expand :: String -> IO String
 expand s =
