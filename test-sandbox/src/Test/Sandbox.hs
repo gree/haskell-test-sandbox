@@ -156,6 +156,7 @@ run name timeout = do
 start :: String     -- ^ Process name
       -> Sandbox ()
 start process = uninterruptibleMask_ $ do
+  installSignalHandlers
   displayBanner
   sp <- getProcess process
   whenM isVerbose $ liftIO $ putStr ("Starting process " ++ process ++ "... ") >> hFlush stdout
