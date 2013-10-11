@@ -392,6 +392,16 @@ displayBanner = do
   void $ setVariable var True
   where var = "__BANNER__DISPLAYED__"
 
+installSignalHandlers :: Sandbox ()
+installSignalHandlers = do
+  installed <- checkVariable var
+  unless installed $ liftIO . void $ do installHandler sigTERM handler Nothing
+                                        installHandler sigQUIT handler Nothing
+                                        installHandler sigABRT handler Nothing
+  void $ setVariable var True
+  where var = "__HANDLERS_INSTALLED__"
+        handler = Catch $ signalProcess sigINT =<< getProcessID
+
 -- Structures to store Sandbox options for future use.
 -- Not expected to be used directly by the user.
 
