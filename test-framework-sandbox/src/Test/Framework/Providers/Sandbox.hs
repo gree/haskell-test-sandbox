@@ -1,12 +1,8 @@
 {- |
    Module    : Test.Framework.Providers.Sandbox
-   Copyright : Copyright (C) 2013 GREE, Benjamin Surma
-   License   : GNU LGPL, version 2.1 or above
    Maintainer: Benjamin Surma <benjamin.surma@gree.net>
 
 test-framework interface for test-sandbox
-
-Copyright (C) 2013 GREE, Benjamin Surma, benjamin.surma@gree.net
 -}
 
 {-# LANGUAGE MultiParamTypeClasses #-}
