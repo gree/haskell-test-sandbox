@@ -47,10 +47,10 @@ import Test.Sandbox.Internals hiding (putOptions)
 import Test.Framework.Providers.Sandbox.Internals
 
 -- | Executes tests in the Sandbox monad.
-sandboxTests :: String       -- ^ Name of the sandbox environment
-             -> Sandbox Test -- ^ Test to perform
+sandboxTests :: String         -- ^ Name of the sandbox environment
+             -> [Sandbox Test] -- ^ Tests to perform
              -> Test
-sandboxTests name test = testGroup name [ buildTest $ do
+sandboxTests name tests = testGroup name [ buildTest $ do
   options <- interpretArgs =<< getArgs
   if isExcluded options name then return (Test name (SandboxTest Skipped))
     else do mvar <- newEmptyMVar :: IO (MVar Int)
@@ -58,7 +58,7 @@ sandboxTests name test = testGroup name [ buildTest $ do
                 buildTestBracketed $
                   withSystemTempDirectory (name ++ "_") $ \dir -> do
                     env <- newSandboxState name dir
-                    (result, env') <- (runStateT . runErrorT . runSandbox) (putOptions options >> test) env
+                    (result, env') <- (runStateT . runErrorT . runSandbox) (putOptions options >> sandboxTestGroup name tests) env
                     let cleanup = (evalStateT . runErrorT . runSandbox) (silently stopAll) env'
                                     >>= either putStrLn return
                                     >> putMVar mvar 0
