@@ -11,8 +11,9 @@ module Test.Sandbox.QuickCheck (
 
 import Control.Monad.Trans (lift, liftIO)
 import Control.Monad.Trans.Error (runErrorT)
-import Control.Monad.State.Strict (get, evalStateT)
+import Control.Monad.Trans.Reader (runReaderT)
 import Control.Monad.Error.Class (throwError)
+import Control.Monad.Reader (ask)
 import Data.Maybe (fromMaybe)
 import System.Exit (exitFailure)
 import System.Random
@@ -48,23 +49,22 @@ verboseCheckWith args = quickCheck' (verboseCheckWithResult args)
 quickCheck' :: (Property -> IO Result) -> PropertyM Sandbox () -> Sandbox ()
 quickCheck' tester prop = do
   seed <- getVariable seedVariable Nothing :: Sandbox (Maybe Int)
-  Sandbox $ do
-    env <- lift get
-    res <- liftIO . tester $ monadic (runSandboxProperty env) prop
-    case res of
+  ref <- ask
+  res <- liftIO . tester $ monadic (runSandboxProperty ref) prop
+  case res of
 #if MIN_VERSION_QuickCheck(2,6,0)
-      Failure { interrupted = i, output = o } -> if i then liftIO exitFailure
-                                                   else throwError (o ++ maybe "" (\s -> " (used seed " ++ show s ++ ")") seed)
+    Failure { interrupted = i, output = o } -> if i then liftIO exitFailure
+                                                 else throwError (o ++ maybe "" (\s -> " (used seed " ++ show s ++ ")") seed)
 #else
-      Failure { reason = r, output = o } -> if "user interrupt" `isInfixOf` r then liftIO exitFailure
-                                              else throwError (o ++ maybe "" (\s -> " (used seed " ++ show s ++ ")") seed)
+    Failure { reason = r, output = o } -> if "user interrupt" `isInfixOf` r then liftIO exitFailure
+                                            else throwError (o ++ maybe "" (\s -> " (used seed " ++ show s ++ ")") seed)
 #endif
-      NoExpectedFailure { output = o } -> throwError o
-      _ -> return ()
+    NoExpectedFailure { output = o } -> throwError o
+    _ -> return ()
 
-runSandboxProperty :: SandboxState -> Sandbox Property -> Property
-runSandboxProperty env prop = morallyDubiousIOProperty $
-  (evalStateT . runErrorT . runSandbox) prop env >>= either error return
+runSandboxProperty :: SandboxStateRef -> Sandbox Property -> Property
+runSandboxProperty ref prop = morallyDubiousIOProperty $
+  (runReaderT . runErrorT . runSandbox) prop ref >>= either error return
 
 getQuickCheckOptions :: Sandbox (Maybe Args)
 getQuickCheckOptions = do

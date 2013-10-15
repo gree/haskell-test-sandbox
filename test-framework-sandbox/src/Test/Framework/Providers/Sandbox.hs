@@ -26,9 +26,9 @@ module Test.Framework.Providers.Sandbox (
 import Control.Concurrent
 import Control.Exception.Lifted
 import Control.Monad hiding (fail)
-import Control.Monad.Trans (lift)
+import Control.Monad.Reader (ask)
 import Control.Monad.Trans.Error (runErrorT)
-import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.Reader (runReaderT)
 import Data.Either
 import Prelude hiding (error, fail)
 import qualified Prelude (error)
@@ -58,8 +58,8 @@ sandboxTests name tests = testGroup name [ buildTest $ do
                 buildTestBracketed $
                   withSystemTempDirectory (name ++ "_") $ \dir -> do
                     env <- newSandboxState name dir
-                    (result, env') <- (runStateT . runErrorT . runSandbox) (putOptions options >> sandboxTestGroup name tests) env
-                    let cleanup = (evalStateT . runErrorT . runSandbox) (silently stopAll) env'
+                    result <- (runReaderT . runErrorT . runSandbox) (putOptions options >> sandboxTestGroup name tests) env
+                    let cleanup = (runReaderT . runErrorT . runSandbox) (silently stopAll) env
                                     >>= either putStrLn return
                                     >> putMVar mvar 0
                     case result of
@@ -92,11 +92,9 @@ sandboxTest :: String       -- ^ Test name
             -> Sandbox ()   -- ^ Action to perform
             -> Sandbox Test
 sandboxTest name test = withTest name $ do
-  res <- Sandbox $ do
-    env <- lift get
-    (res, env') <- liftIO $ flip (runStateT . runErrorT . runSandbox) env $ test `catches` handlers
-    lift $ put env'
-    return res
+  res <- do
+    ref <- ask
+    liftIO $ flip (runReaderT . runErrorT . runSandbox) ref $ test `catches` handlers
   liftIO $ printTestResult res
   case res of
     Left error -> return $ Test name (SandboxTest (Failure error))
