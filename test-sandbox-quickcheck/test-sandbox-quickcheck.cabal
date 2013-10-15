@@ -1,5 +1,5 @@
 Name:           test-sandbox-quickcheck
-Version:        0.0.1.2
+Version:        0.0.1.3
 Cabal-Version:  >= 1.14
 Category:       Testing
 Synopsis:       QuickCheck convenience functions for use with test-sandbox
@@ -18,7 +18,7 @@ Source-Repository head
 Source-Repository this
     Type:       git
     Location:   https://github.com/gree/haskell-test-sandbox
-    Tag:        0.0.1.2
+    Tag:        test-sandbox-quickcheck_0.0.1.3
 
 Library
     Exposed-modules:    Test.Sandbox.QuickCheck
