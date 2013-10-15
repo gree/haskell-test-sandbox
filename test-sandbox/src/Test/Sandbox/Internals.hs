@@ -14,14 +14,15 @@ import Control.Monad
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Error (MonadError, catchError, throwError)
 import Control.Monad.Loops
-import Control.Monad.State (MonadState, get, put)
-import Control.Monad.Trans (MonadIO, lift, liftIO)
+import Control.Monad.Reader (MonadReader, ask)
+import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl (..))
 import Control.Monad.Trans.Error (ErrorT)
-import Control.Monad.Trans.State.Strict (StateT)
+import Control.Monad.Trans.Reader (ReaderT)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as B
 import Data.Char
+import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe
@@ -43,12 +44,14 @@ import System.Process.Internals (withProcessHandle, ProcessHandle__(OpenHandle))
 import System.Random
 import System.Random.Shuffle
 
+type SandboxStateRef = IORef SandboxState
+
 newtype Sandbox a = Sandbox {
-    runSandbox :: ErrorT String (StateT SandboxState IO) a
-  } deriving (Applicative, Functor, Monad, MonadBase IO, MonadError String, MonadState SandboxState, MonadIO)
+    runSandbox :: ErrorT String (ReaderT SandboxStateRef IO) a
+  } deriving (Applicative, Functor, Monad, MonadBase IO, MonadError String, MonadReader (IORef SandboxState), MonadIO)
 
 instance MonadBaseControl IO Sandbox where
-  newtype StM Sandbox a = StMSandbox { runStMSandbox :: StM (ErrorT String (StateT SandboxState IO)) a }
+  newtype StM Sandbox a = StMSandbox { runStMSandbox :: StM (ErrorT String (ReaderT SandboxStateRef IO)) a }
   liftBaseWith f = Sandbox . liftBaseWith $ \run -> f (liftM StMSandbox . run . runSandbox)
   restoreM = Sandbox . restoreM . runStMSandbox
 
@@ -79,6 +82,15 @@ data Capture = CaptureStdout
 data SandboxedProcessInstance = RunningInstance ProcessHandle Handle (Maybe Handle)
                               | StoppedInstance ExitCode (Maybe String)
 
+get :: Sandbox SandboxState
+get = ask >>= liftIO . readIORef
+
+put :: SandboxState -> Sandbox SandboxState
+put state = do
+  ref <- ask
+  liftIO $ writeIORef ref state
+  return state
+
 pretty :: SandboxState -> String
 pretty env =
   header env ++
@@ -100,12 +112,12 @@ footer :: String
 footer =
   "\n--------------------------------------------------------------------------------\n"
 
-newSandboxState :: String -> FilePath -> IO SandboxState
+newSandboxState :: String -> FilePath -> IO SandboxStateRef
 newSandboxState name dir = do
   gen <- newStdGen
   let availablePorts = shuffle' userPorts (length userPorts) gen
                        where userPorts = [49152..65535]
-  return $ SandboxState name dir M.empty [] M.empty availablePorts M.empty M.empty
+  newIORef $ SandboxState name dir M.empty [] M.empty availablePorts M.empty M.empty
 
 registerProcess ::
   String -> FilePath -> [String] -> Maybe Int -> Maybe Capture
@@ -131,7 +143,7 @@ isValidProcessName s = not (null s)
 
 getProcess :: String -> Sandbox SandboxedProcess
 getProcess name = do
-  env <- Sandbox get
+  env <- get
   case M.lookup name (ssProcesses env) of
     Just sp -> let spi = spInstance sp in
       case spi of
@@ -348,16 +360,16 @@ setVariable :: Serialize a
             => String    -- ^ Variable key for future reference
             -> a         -- ^ Variable value
             -> Sandbox a
-setVariable name new = Sandbox $ do
-  env <- lift get
-  lift . put $ env { ssVariables = M.insert name (encode new) (ssVariables env) }
+setVariable name new = do
+  env <- get
+  put $ env { ssVariables = M.insert name (encode new) (ssVariables env) }
   return new
 
 -- | Checks that a custom sandbox variable is set.
 checkVariable :: String       -- ^ Variable key
               -> Sandbox Bool
-checkVariable name = Sandbox $ do
-  env <- lift get
+checkVariable name = do
+  env <- get
   return $ M.member name $ ssVariables env
 
 -- | Returns the value of a previously set sandbox variable (or a provided default value if unset)
@@ -365,8 +377,8 @@ getVariable :: Serialize a
             => String    -- ^ Variable key
             -> a         -- ^ Default value if not found
             -> Sandbox a
-getVariable name defval = Sandbox $ do
-  env <- lift get
+getVariable name defval = do
+  env <- get
   let var = case M.lookup name $ ssVariables env of
               Nothing -> Right defval
               Just var' -> decode var'
@@ -375,9 +387,9 @@ getVariable name defval = Sandbox $ do
 -- | Unsets a custom variable.
 unsetVariable :: String     -- ^ Variable key
               -> Sandbox ()
-unsetVariable name = Sandbox $ do
-  env <- lift get
-  lift . put $ env { ssVariables = M.delete name $ ssVariables env }
+unsetVariable name = do
+  env <- get
+  void $ put env { ssVariables = M.delete name $ ssVariables env }
 
 isVerbose :: Sandbox Bool
 isVerbose = getVariable verbosityKey True
@@ -388,7 +400,7 @@ verbosityKey = "__VERBOSITY__"
 displayBanner :: Sandbox ()
 displayBanner = do
   displayed <- checkVariable var
-  unless displayed $ Sandbox $ lift get >>= liftIO . putStrLn . pretty
+  unless displayed $ get >>= liftIO . putStrLn . pretty
   void $ setVariable var True
   where var = "__BANNER__DISPLAYED__"
 

@@ -78,10 +78,10 @@ module Test.Sandbox (
 import Control.Concurrent (threadDelay)
 import Control.Exception.Lifted hiding (bracket)
 import Control.Monad
-import Control.Monad.Trans (lift, liftIO)
+import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.Error (runErrorT)
+import Control.Monad.Trans.Reader (runReaderT)
 import Control.Monad.Error.Class (catchError, throwError)
-import Control.Monad.Trans.State.Strict
 import qualified Data.ByteString.Char8 as B
 import Data.Default
 import Data.Either
@@ -104,16 +104,10 @@ sandbox :: String    -- ^ Name of the sandbox environment
         -> IO a
 sandbox name actions = withSystemTempDirectory (name ++ "_") $ \dir -> do
   env <- newSandboxState name dir
-  (evalStateT . runErrorT . runSandbox) (actions `catches` handlers `finally` stopAll) env >>= either
+  (runReaderT . runErrorT . runSandbox) (actions `finally` stopAll) env >>= either
     (\error -> do hPutStrLn stderr error
                   throwIO $ userError error)
     return
-  where handlers = [ Handler exitHandler
-                   , Handler otherHandler ]
-        exitHandler :: ExitCode -> Sandbox a
-        exitHandler e = stopAll >> throw e
-        otherHandler :: SomeException -> Sandbox a
-        otherHandler _ = stopAll >> liftIO exitFailure
 
 -- | Optional parameters when registering a process in the Sandbox monad.
 data ProcessSettings = ProcessSettings {
@@ -168,9 +162,8 @@ startAll :: Sandbox ()
 startAll = uninterruptibleMask_ $ do
   displayBanner
   whenM isVerbose $ liftIO $ putStr "Starting all sandbox processes... " >> hFlush stdout
-  silently $ Sandbox $ do env <- lift get
-                          mapM_ (runSandbox . start) (ssProcessOrder env)
-                          lift get >>= lift . put
+  silently $ do env <- get
+                mapM_ start (ssProcessOrder env)
   whenM isVerbose $ liftIO $ putStrLn "Done."
 
 waitFor :: String -> Int -> Sandbox (ExitCode, Maybe String)
@@ -206,9 +199,8 @@ signal process sig = uninterruptibleMask_ $ do
 stopAll :: Sandbox ()
 stopAll = uninterruptibleMask_ $ do
   whenM isVerbose $ liftIO $ putStr "Stopping all sandbox processes... " >> hFlush stdout
-  silently $ Sandbox $ do env <- lift get
-                          mapM_ (runSandbox . stop) (reverse $ ssProcessOrder env)
-                          lift get >>= lift . put
+  silently $ do env <- get
+                mapM_ stop (reverse $ ssProcessOrder env)
   whenM isVerbose $ liftIO $ putStrLn "Done."
 
 -- | Returns the effective binary path of a registered process.
@@ -247,7 +239,7 @@ interactWith process input timeout = do
 getPort :: String             -- ^ Port name for future reference
         -> Sandbox PortNumber
 getPort name = do
-  env <- Sandbox $ lift get
+  env <- get
   case M.lookup name $ ssAllocatedPorts env of
     Just port -> return port
     Nothing -> getNewPort name
@@ -256,11 +248,11 @@ getPort name = do
 setPort :: String             -- ^ Port name for future reference
         -> Int                -- ^ TCP port number
         -> Sandbox PortNumber
-setPort name port = Sandbox $ do
+setPort name port = do
   let port' = fromIntegral port
   bindable <- liftIO $ isBindable (fromIntegral port)
-  if bindable then do env <- lift get
-                      lift $ put (env { ssAllocatedPorts = M.insert name port' $ ssAllocatedPorts env })
+  if bindable then do env <- get
+                      put (env { ssAllocatedPorts = M.insert name port' $ ssAllocatedPorts env })
                       return port'
     else throwError $ "Unable to bind port " ++ show port
 
@@ -268,17 +260,17 @@ setPort name port = Sandbox $ do
 setFile :: String           -- ^ File name for future reference
         -> String           -- ^ File contents
         -> Sandbox FilePath
-setFile name contents = Sandbox $ do
-  env <- lift get
+setFile name contents = do
+  env <- get
   (file, env') <- liftIO $ setFile' name contents env
-  lift $ put env'
+  put env'
   return file
 
 -- | Returns the path of a file previously created by setFile.
 getFile :: String           -- ^ File name used during setFile
         -> Sandbox FilePath
-getFile name = Sandbox $ do
-  env <- lift get
+getFile name = do
+  env <- get
   case M.lookup name $ ssFiles env of
     Just file -> return file
     Nothing -> throwError $ "Config file " ++ name ++ " does not exist."
@@ -300,7 +292,7 @@ withVariable :: (Serialize a)
              -> a         -- ^ Variable value
              -> Sandbox b -- ^ Action to run
              -> Sandbox b
-withVariable key value action = bracket (do env <- Sandbox $ lift get
+withVariable key value action = bracket (do env <- get
                                             let old = M.lookup key $ ssVariables env
                                             setVariable key value
                                             return old)
@@ -311,7 +303,7 @@ withVariable key value action = bracket (do env <- Sandbox $ lift get
 
 -- | Returns the temporary directory used to host the sandbox environment.
 getDataDir :: Sandbox FilePath
-getDataDir = Sandbox $ liftM ssDataDir (lift get)
+getDataDir = liftM ssDataDir get
 
 -- | Executes the given action silently.
 silently :: Sandbox a -- ^ Action to execute
