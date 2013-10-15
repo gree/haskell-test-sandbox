@@ -6,7 +6,6 @@ test-framework interface for test-sandbox
 -}
 
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 
 module Test.Framework.Providers.Sandbox (
   -- * Introduction
