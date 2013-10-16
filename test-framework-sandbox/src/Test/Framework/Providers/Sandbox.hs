@@ -23,7 +23,6 @@ module Test.Framework.Providers.Sandbox (
   , yieldProgress
   ) where
 
-import Control.Concurrent
 import Control.Exception.Lifted
 import Control.Monad hiding (fail)
 import Control.Monad.Reader (ask)
@@ -50,22 +49,17 @@ import Test.Framework.Providers.Sandbox.Internals
 sandboxTests :: String         -- ^ Name of the sandbox environment
              -> [Sandbox Test] -- ^ Tests to perform
              -> Test
-sandboxTests name tests = testGroup name [ buildTest $ do
-  options <- interpretArgs =<< getArgs
-  if isExcluded options name then return (Test name (SandboxTest Skipped))
-    else do mvar <- newEmptyMVar :: IO (MVar Int)
-            return $ mutuallyExclusive $ testGroup name [
-                buildTestBracketed $
-                  withSystemTempDirectory (name ++ "_") $ \dir -> do
-                    env <- newSandboxState name dir
-                    result <- (runReaderT . runErrorT . runSandbox) (putOptions options >> sandboxTestGroup name tests) env
-                    let cleanup = (runReaderT . runErrorT . runSandbox) (silently stopAll) env
-                                    >>= either putStrLn return
-                                    >> putMVar mvar 0
-                    case result of
-                      Left error -> return (Test name (SandboxTest (Failure error)), cleanup)
-                      Right x -> return (x, cleanup)
-              , Test "cleaning" (SandboxCleaning mvar) ] ]
+sandboxTests name tests = testGroup name [
+    buildTest $ do
+      options <- interpretArgs =<< getArgs
+      if isExcluded options name then return $ Test name (SandboxTest Skipped)
+        else withSystemTempDirectory (name ++ "_") $ \dir -> do
+               env <- newSandboxState name dir
+               result <- (runReaderT . runErrorT . runSandbox) (putOptions options >> sandboxTestGroup name tests `finally` stopAll) env
+               case result of
+                 Left error -> return $ Test name (SandboxTest (Failure error))
+                 Right x -> return x
+  ]
 
 -- | Groups tests in the Sandbox monad.
 sandboxTestGroup :: String         -- ^ Test group name
@@ -103,10 +97,10 @@ sandboxTest name test = withTest name $ do
                    , Handler interruptHandler
                    , Handler otherHandler ]
         exitHandler :: ExitCode -> Sandbox a
-        exitHandler e = stopAll >> throw e
+        exitHandler = throw
         interruptHandler :: AsyncException -> Sandbox a
-        interruptHandler UserInterrupt = stopAll >> liftIO exitFailure
-        interruptHandler e = Sandbox . throwError . show $ e
+        interruptHandler UserInterrupt = liftIO exitFailure
+        interruptHandler e = Sandbox . throwError $ show e
         otherHandler :: SomeException -> Sandbox a
         otherHandler = Sandbox . throwError . show
 
@@ -151,8 +145,9 @@ grouped by @sandboxTestGroup@.
 > setup = start =<< register "sed_s/a/b/" "sed" [ "-u", "s/a/b/" ] def { psCapture = CaptureStdout }
 > 
 > main = defaultMain [
->     sandboxTests "sed_tests" $ setup >> sandboxTestGroup "all" [
->         sandboxTest "sed a->b" $ assertEqual "a->b" "b\n" =<< interactWith "sed_s/a/b/" "a\n" 5
+>     sandboxTests "sed_tests" [
+>         sandboxTest "setup" setup
+>       , sandboxTest "sed a->b" $ assertEqual "a->b" "b\n" =<< interactWith "sed_s/a/b/" "a\n" 5
 >       , sandboxTest "sed aa->ba" $ assertEqual "aa->ba" "ba\n" =<< interactWith "sed_s/a/b/" "aa\n" 5
 >     ]
 >   ]

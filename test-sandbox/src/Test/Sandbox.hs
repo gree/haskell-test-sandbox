@@ -60,7 +60,6 @@ module Test.Sandbox (
   , getFile
   , setFile
   , getDataDir
-  , bracket
   , checkVariable
   , getVariable
   , setVariable
@@ -68,7 +67,9 @@ module Test.Sandbox (
   , withVariable
 
   -- * Sandbox exception handling
+  , bracket
   , catchError
+  , finally
   , throwError
 
   -- * Sandbox I/O handling
@@ -76,7 +77,7 @@ module Test.Sandbox (
   ) where
 
 import Control.Concurrent (threadDelay)
-import Control.Exception.Lifted hiding (bracket)
+import Control.Exception.Lifted
 import Control.Monad
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.Error (runErrorT)
@@ -274,17 +275,6 @@ getFile name = do
   case M.lookup name $ ssFiles env of
     Just file -> return file
     Nothing -> throwError $ "Config file " ++ name ++ " does not exist."
-
--- | A variant of bracket from Control.Exception which works in the Sandbox monad.
-bracket :: Sandbox a       -- ^ Computation to run first ("acquire resource")
-        -> (a -> Sandbox b) -- ^ Computation to run last ("release resource")
-        -> (a -> Sandbox c) -- ^ Computation to run in-between
-        -> Sandbox c
-bracket acquire release between = do
-  stuff <- acquire
-  result <- between stuff `catchError` (\e -> release stuff >> throwError e)
-  release stuff
-  return result
 
 -- | Temporarily sets a variable for the execution of the given action.
 withVariable :: (Serialize a)
