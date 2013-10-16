@@ -1,4 +1,4 @@
--- author: Benjamin Surma <benjamin.surma@gree.net>
+-- author: Benjamin Surma <benjamin.surma@gmail.com>
 
 module Test.Sandbox.HUnit (
     assertFailure
