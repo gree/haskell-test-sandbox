@@ -1,6 +1,6 @@
 {- |
    Module    : Test.Sandbox
-   Maintainer: Benjamin Surma <benjamin.surma@gree.net>
+   Maintainer: Benjamin Surma <benjamin.surma@gmail.com>
 
 Configuration and management of processes in a sandboxed environment for system testing.
 

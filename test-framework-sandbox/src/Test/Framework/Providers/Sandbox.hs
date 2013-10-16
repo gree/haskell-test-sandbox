@@ -1,6 +1,6 @@
 {- |
    Module    : Test.Framework.Providers.Sandbox
-   Maintainer: Benjamin Surma <benjamin.surma@gree.net>
+   Maintainer: Benjamin Surma <benjamin.surma@gmail.com>
 
 test-framework interface for test-sandbox
 -}
