@@ -33,7 +33,7 @@ Library
 
     Build-Depends:      base >=4 && <5, bytestring, cereal, containers,
                         data-default, directory, filepath, lifted-base,
-                        monad-control, monad-loops, mtl, network, process >= 1.1 && < 1.2,
+                        monad-control, monad-loops, mtl, network, process >= 1.2,
                         random, random-shuffle, temporary, transformers,
                         transformers-base, unix
 
