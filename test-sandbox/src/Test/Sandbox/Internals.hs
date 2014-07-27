@@ -285,7 +285,7 @@ killProcess = hSignalProcess sigKILL
 hGetProcessID :: ProcessHandle -> IO ProcessID
 hGetProcessID h = withProcessHandle h $ \x ->
   case x of
-    OpenHandle pid -> return (x, pid)
+    OpenHandle pid -> return pid
     _ -> throwIO $ userError "Unable to retrieve child process ID."
 
 interactWithProcess :: SandboxedProcess -> String -> Int -> Sandbox String
