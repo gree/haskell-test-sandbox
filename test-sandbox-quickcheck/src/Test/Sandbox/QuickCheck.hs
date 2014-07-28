@@ -26,7 +26,12 @@ import Test.Sandbox.Internals
 
 import Test.QuickCheck hiding (quickCheck, quickCheckWith, verboseCheck, verboseCheckWith)
 import Test.QuickCheck.Monadic
-import Test.QuickCheck.Property hiding (Result, interrupted, reason)
+import Test.QuickCheck.Property hiding (Result, interrupted, reason, theException)
+#if MIN_VERSION_QuickCheck(2,7,0)
+import Test.QuickCheck.Random
+import Test.QuickCheck.Exception
+#endif
+
 
 -- | Tests a property and prints the results to stdout.
 quickCheck :: PropertyM Sandbox () -> Sandbox ()
@@ -52,7 +57,10 @@ quickCheck' tester prop = do
   ref <- ask
   res <- liftIO . tester $ monadic (runSandboxProperty ref) prop
   case res of
-#if MIN_VERSION_QuickCheck(2,6,0)
+#if MIN_VERSION_QuickCheck(2,7,0)
+    Failure { theException = e, output = o } -> if fmap isInterrupt e == Just True then liftIO exitFailure
+                                                  else throwError (o ++ maybe "" (\s -> " (used seed " ++ show s ++ ")") seed)
+#elif MIN_VERSION_QuickCheck(2,6,0)
     Failure { interrupted = i, output = o } -> if i then liftIO exitFailure
                                                  else throwError (o ++ maybe "" (\s -> " (used seed " ++ show s ++ ")") seed)
 #else
@@ -85,7 +93,11 @@ getQuickCheckOptions = do
                             , maxDiscardRatio = fromMaybe (maxDiscardRatio stdArgs) (stoMaximumUnsuitableGeneratedTests stuff)
                             , maxSize = fromMaybe (maxSize stdArgs) (stoMaximumTestSize stuff) }
   where randomSeed = liftIO randomIO >>= fixedSeed
+#if MIN_VERSION_QuickCheck(2,7,0)
+        fixedSeed s = return (mkQCGen s, s)
+#else
         fixedSeed s = return (mkStdGen s, s)
+#endif
 
 seedVariable :: String
 seedVariable = "__QUICKCHECK_SEED__"
