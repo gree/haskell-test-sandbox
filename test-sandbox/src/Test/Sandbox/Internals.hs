@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE CPP #-}
 
 module Test.Sandbox.Internals where
 
@@ -93,19 +94,19 @@ put state = do
 
 pretty :: SandboxState -> String
 pretty env =
-  header env ++
-  "-- Data directory: " ++ ssDataDir env ++ "\n\
-  \-- Allocated ports: " ++ unwords (map show $ M.assocs $ ssAllocatedPorts env) ++ "\n\
-  \-- Configuration files: " ++ unwords (M.elems $ ssFiles env) ++ "\n\
-  \-- Registered processes: " ++ unwords (ssProcessOrder env)
+  header env
+  ++ "-- Data directory: " ++ ssDataDir env ++ "\n"
+  ++ "-- Allocated ports: " ++ unwords (map show $ M.assocs $ ssAllocatedPorts env) ++ "\n"
+  ++ "-- Configuration files: " ++ unwords (M.elems $ ssFiles env) ++ "\n"
+  ++ "-- Registered processes: " ++ unwords (ssProcessOrder env)
   ++ footer
 
 header :: SandboxState -> String
 header te =
-  "\n\
-  \##------------------------------------------------------------------------------\n\
-  \ ## " ++ title ++ replicate (72 - length title) ' ' ++ "  --\n\
-  \## ##---------------------------------------------------------------------------\n"
+  "\n"
+  ++ "##------------------------------------------------------------------------------\n"
+  ++ " ## " ++ title ++ replicate (72 - length title) ' ' ++ "  --\n"
+  ++ "## ##---------------------------------------------------------------------------\n"
   where title = ssName te ++ " system test environment"
 
 footer :: String
@@ -255,9 +256,9 @@ startProcess sp =
       errno <- liftIO $ getProcessExitCode ph
       case errno of
         Nothing -> updateProcess sp { spInstance = Just $ RunningInstance ph ih hOutRO }
-        Just errno' -> throwError $ "Process " ++ spName sp ++ " not running.\n\
-                                    \ - command-line: " ++ formatCommandLine bin args ++ "\n\
-                                    \ - exit code: " ++ show errno' 
+        Just errno' -> throwError $ "Process " ++ spName sp ++ " not running.\n"
+                                 ++ " - command-line: " ++ formatCommandLine bin args ++ "\n"
+                                 ++ " - exit code: " ++ show errno' 
 
 formatCommandLine :: String -> [String] -> String
 formatCommandLine bin args = unwords $ bin : args
@@ -285,7 +286,11 @@ killProcess = hSignalProcess sigKILL
 hGetProcessID :: ProcessHandle -> IO ProcessID
 hGetProcessID h = withProcessHandle h $ \x ->
   case x of
+#if MIN_VERSION_process(1,2,0)
     OpenHandle pid -> return pid
+#else
+    OpenHandle pid -> return (x, pid)
+#endif
     _ -> throwIO $ userError "Unable to retrieve child process ID."
 
 interactWithProcess :: SandboxedProcess -> String -> Int -> Sandbox String
@@ -301,15 +306,15 @@ getProcessInputHandle :: SandboxedProcess -> Sandbox Handle
 getProcessInputHandle sp =
     case spInstance sp of
       Just (RunningInstance _ ih _) -> return ih
-      _ -> throwError $ "No such handle for " ++ spName sp ++ ". \
-                        \Is the process started?"
+      _ -> throwError $ "No such handle for " ++ spName sp ++ ". "
+                     ++ "Is the process started?"
 
 getProcessCapturedOutputHandle :: SandboxedProcess -> Sandbox Handle
 getProcessCapturedOutputHandle sp =
   case spInstance sp of
     Just (RunningInstance _ _ (Just oh)) -> return oh
-    _ -> throwError $ "No captured output handle for " ++ spName sp ++ ". \
-                      \Is capture activated?"
+    _ -> throwError $ "No captured output handle for " ++ spName sp ++ ". "
+                   ++ "Is capture activated?"
 
 getProcessBinary :: SandboxedProcess -> Sandbox FilePath
 getProcessBinary sp = do
@@ -317,8 +322,8 @@ getProcessBinary sp = do
   case existing of
     exBin:_ -> return exBin
     [] -> throwError $ "Unable to find the executable for the test process \""
-                       ++ spName sp ++ "\"\r\n\
-                       \Considered paths were: " ++ show bins
+                    ++ spName sp ++ "\"\r\n"
+                    ++ "Considered paths were: " ++ show bins
   where bins = getProcessCandidateBinaries sp
 
 findExecutables :: [FilePath] -> IO [FilePath]
