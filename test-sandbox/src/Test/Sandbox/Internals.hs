@@ -40,7 +40,7 @@ import System.FilePath
 import System.IO
 import System.IO.Error (isEOFError, tryIOError)
 import System.Posix hiding (killProcess)
-import System.Process hiding (env, waitForProcess)
+import System.Process -- hiding (env, waitForProcess)
 import System.Process.Internals (withProcessHandle, ProcessHandle__(OpenHandle))
 import System.Random
 import System.Random.Shuffle
@@ -67,6 +67,9 @@ data SandboxState = SandboxState {
   , ssVariables :: Map String ByteString
   }
 
+type Message = String
+type ErrMessage = String
+
 data SandboxedProcess = SandboxedProcess {
     spName :: String
   , spBinary :: FilePath
@@ -74,7 +77,13 @@ data SandboxedProcess = SandboxedProcess {
   , spWait :: Maybe Int
   , spCapture :: Maybe Capture
   , spInstance :: Maybe SandboxedProcessInstance
+  } | SandboxedCommand {
+    spName :: String
+  , spConstructCommand :: IO (ExitCode,Message,ErrMessage)
+  , spDestructCommand :: (ExitCode,Message,ErrMessage) -> IO (ExitCode,Message,ErrMessage)
+  , spStat :: Maybe (ExitCode,Message,ErrMessage)
   }
+
 
 data Capture = CaptureStdout
                | CaptureStderr
@@ -135,6 +144,26 @@ registerProcess name bin args wait capture = do
             put env { ssProcesses = M.insert name sp (ssProcesses env)
                     , ssProcessOrder = ssProcessOrder env ++ [name] }
             return sp
+
+
+registerCommand :: String
+                   -> IO (ExitCode,Message,ErrMessage)
+                   -> ((ExitCode,Message,ErrMessage) -> IO (ExitCode,Message,ErrMessage))
+                   -> Sandbox SandboxedProcess
+registerCommand name construct destruct = do
+  -- Validate process name
+  unless (isValidProcessName name) $
+    throwError $ "Invalid command name: " ++ name ++ "."
+  -- Register into the environment
+  env <- get
+  if isJust (M.lookup name (ssProcesses env)) then
+    throwError $ "Command " ++ name ++ " is already registered in the test environment."
+    else do
+    let sp = SandboxedCommand name construct destruct Nothing
+    put env { ssProcesses = M.insert name sp (ssProcesses env)
+            , ssProcessOrder = ssProcessOrder env ++ [name] }
+    return sp
+
 
 isValidProcessName :: String -> Bool
 isValidProcessName s = not (null s)
@@ -230,14 +259,19 @@ isBindable p = withSocketsDo $ do
   return $! r
 
 startProcess :: SandboxedProcess -> Sandbox SandboxedProcess
-startProcess sp =
-  case spInstance sp of
-    Nothing -> startProcess'
-    Just (RunningInstance {}) -> return sp
-    Just (StoppedInstance {}) -> startProcess'
+startProcess sp' =
+  case sp' of
+    sp@(SandboxedProcess _ _ _ _ _ _) -> do
+      case spInstance sp of
+        Nothing -> startProcess' sp
+        Just (RunningInstance {}) -> return sp
+        Just (StoppedInstance {}) -> startProcess' sp
+    sc@(SandboxedCommand _ construct _ _) -> do
+      v <- liftIO $ construct
+      return $ sc{spStat = Just v}
   where
-    startProcess' :: Sandbox SandboxedProcess
-    startProcess' = do
+    startProcess' :: SandboxedProcess -> Sandbox SandboxedProcess
+    startProcess' sp = do
       bin <- getProcessBinary sp
       args <- mapM (liftIO . expand) $ spArgs sp
       (hOutRO, hOutRW, hErrRW) <- case spCapture sp of
@@ -264,16 +298,23 @@ formatCommandLine :: String -> [String] -> String
 formatCommandLine bin args = unwords $ bin : args
 
 stopProcess :: SandboxedProcess -> Sandbox SandboxedProcess
-stopProcess sp =
-  case spInstance sp of
-    Just (RunningInstance ph _ _) -> do
-      let wait = if isNothing $ spWait sp then 50000 else fromJust (spWait sp) * secondInµs `div` 5
-      liftIO $ do terminateProcess ph
-                  threadDelay wait
-      stillRunning <- liftM isNothing $ liftIO $ getProcessExitCode ph
-      when stillRunning $ liftIO $ killProcess ph
-      stopProcess =<< getProcess (spName sp)
-    _ -> return sp
+stopProcess sp' =
+  case sp' of
+    sp@(SandboxedProcess _ _ _ _ _ _) -> do
+      case spInstance sp of
+        Just (RunningInstance ph _ _) -> do
+          let wait = if isNothing $ spWait sp then 50000 else fromJust (spWait sp) * secondInµs `div` 5
+          liftIO $ do terminateProcess ph
+                      threadDelay wait
+          stillRunning <- liftM isNothing $ liftIO $ getProcessExitCode ph
+          when stillRunning $ liftIO $ killProcess ph
+          stopProcess =<< getProcess (spName sp)
+        _ -> return sp
+    sc@(SandboxedCommand _ _ destruct (Just stat)) -> do
+      v <- liftIO $ destruct stat
+      return $ sc{spStat = Just v}
+    sc@(SandboxedCommand _ _ _ Nothing) -> do
+      return sc
 
 hSignalProcess :: Signal -> ProcessHandle -> IO ()
 hSignalProcess s h = do

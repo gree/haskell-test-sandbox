@@ -34,8 +34,15 @@ module Test.Sandbox (
   -- * Initialization
   , sandbox
 
+  -- * utility
+  , withSandbox
+  , runSB
+
   -- * Registering processes
   , register
+
+  -- * Registering command
+  , registerCmd
 
   -- * Managing sandboxed processes
   , run
@@ -96,6 +103,7 @@ import System.Exit
 import System.IO
 import System.IO.Temp
 import System.Posix hiding (release)
+import System.Environment (getProgName)
 
 import Test.Sandbox.Internals
 
@@ -110,6 +118,25 @@ sandbox name actions = withSystemTempDirectory (name ++ "_") $ \dir -> do
                   throwIO $ userError error)
     return
 
+
+
+withSandbox :: (SandboxStateRef -> IO a) -> IO a
+withSandbox actions = do
+  name <- getProgName
+  withSystemTempDirectory (name ++ "_") $ \dir -> do
+    bracket (newSandboxState name dir) (stopSB) actions
+      where
+        stopSB env' = (runReaderT . runErrorT . runSandbox ) stopAll env'
+                      >>= either (\error' -> do hPutStrLn stderr error'
+                                                throwIO $ userError error')
+                      return
+
+runSB :: SandboxStateRef -> Sandbox a -> IO a
+runSB env' action = (runReaderT . runErrorT . runSandbox ) action env'
+                    >>= either (\error' -> do hPutStrLn stderr error'
+                                              throwIO $ userError error')
+                    return
+                                                                               
 -- | Optional parameters when registering a process in the Sandbox monad.
 data ProcessSettings = ProcessSettings {
     psWait :: Maybe Int        -- ^ Time to wait (in s.) before checking that the process is still up
@@ -126,6 +153,13 @@ register :: String          -- ^ Process name
          -> ProcessSettings -- ^ Process settings
          -> Sandbox String
 register name bin args params = registerProcess name bin args (psWait params) (psCapture params) >> return name
+
+-- | Registers a command in the Sandbox monad.
+registerCmd :: String                                                           -- ^ Command name
+         -> IO (ExitCode,Message,ErrMessage)                                    -- ^ Constructor
+         -> ((ExitCode,Message,ErrMessage) -> IO (ExitCode,Message,ErrMessage)) -- ^ Destructor
+         -> Sandbox String
+registerCmd name construct destruct = registerCommand name construct destruct >> return name
 
 -- | Communicates with a sandboxed process via TCP and returns the answered message as a string.
 sendTo :: String         -- ^ Name of the registered port 
