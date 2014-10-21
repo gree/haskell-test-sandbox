@@ -1,5 +1,5 @@
 Name:           test-sandbox-hunit
-Version:        0.0.1.5
+Version:        0.0.1.6
 Cabal-Version:  >= 1.14
 Category:       Testing
 Synopsis:       HUnit convenience functions for use with test-sandbox
@@ -18,7 +18,7 @@ Source-Repository head
 Source-Repository this
     Type:       git
     Location:   https://github.com/gree/haskell-test-sandbox
-    Tag:        test-sandbox-hunit_0.0.1.5
+    Tag:        test-sandbox-hunit_0.0.1.6
 
 Library
     Exposed-modules:    Test.Sandbox.HUnit
@@ -28,3 +28,5 @@ Library
     Hs-source-dirs:     src
 
     Default-Language:   Haskell2010
+
+    ghc-options:       -Wall

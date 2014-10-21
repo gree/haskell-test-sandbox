@@ -9,28 +9,20 @@ module Test.Sandbox.QuickCheck (
   , verboseCheckWith
   ) where
 
-import Control.Monad.Trans (lift, liftIO)
-import Control.Monad.Trans.Error (runErrorT)
-import Control.Monad.Trans.Reader (runReaderT)
+import Control.Monad.Trans (liftIO)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Reader (ask)
 import Data.Maybe (fromMaybe)
 import System.Exit (exitFailure)
 import System.Random
 
-#if !MIN_VERSION_QuickCheck(2,6,0)
-import Data.List (isInfixOf)
-#endif
-
 import Test.Sandbox.Internals
 
 import Test.QuickCheck hiding (quickCheck, quickCheckWith, verboseCheck, verboseCheckWith)
 import Test.QuickCheck.Monadic
-import Test.QuickCheck.Property hiding (Result, interrupted, reason, theException)
-#if MIN_VERSION_QuickCheck(2,7,0)
+import Test.QuickCheck.Property ()
 import Test.QuickCheck.Random
 import Test.QuickCheck.Exception
-#endif
 
 
 -- | Tests a property and prints the results to stdout.
@@ -71,8 +63,8 @@ quickCheck' tester prop = do
     _ -> return ()
 
 runSandboxProperty :: SandboxStateRef -> Sandbox Property -> Property
-runSandboxProperty ref prop = morallyDubiousIOProperty $
-  (runReaderT . runErrorT . runSandbox) prop ref >>= either error return
+runSandboxProperty ref prop = ioProperty $
+  runSandbox prop ref >>= either error return
 
 getQuickCheckOptions :: Sandbox (Maybe Args)
 getQuickCheckOptions = do
@@ -80,14 +72,14 @@ getQuickCheckOptions = do
   case options of
     Nothing -> do
       (gen, seed) <- randomSeed
-      setVariable seedVariable (Just seed)
+      _ <- setVariable seedVariable (Just seed)
       return $ Just stdArgs { replay = Just (gen, 0) }
     Just stuff -> do
       (gen, seed) <- case stoSeed stuff of
                        Nothing -> randomSeed
                        Just SandboxRandomSeed -> randomSeed
                        Just (SandboxFixedSeed i) -> fixedSeed i
-      setVariable seedVariable (Just seed)
+      _ <- setVariable seedVariable (Just seed)
       return $ Just stdArgs { replay = Just (gen, 0)
                             , maxSuccess = fromMaybe (maxSuccess stdArgs) (stoMaximumGeneratedTests stuff)
                             , maxDiscardRatio = fromMaybe (maxDiscardRatio stdArgs) (stoMaximumUnsuitableGeneratedTests stuff)

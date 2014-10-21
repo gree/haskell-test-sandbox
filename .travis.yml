@@ -1,0 +1,27 @@
+language: haskell
+
+matrix:
+  include:
+    - os: linux
+    - os: osx
+
+install:
+    - cabal update
+
+script:
+  - cd test-sandbox
+  - cabal install --only-dependencies --enable-tests
+  - "cabal configure --enable-tests --ghc-options=-Werror && cabal build && cabal test "
+  - "cabal sdist && cabal install dist/test-sandbox-*.tar.gz"
+  - cd ../test-sandbox-hunit
+  - cabal install --only-dependencies --enable-tests
+  - "cabal configure --enable-tests --ghc-options=-Werror && cabal build && cabal test "
+  - "cabal sdist && cabal install dist/test-sandbox-*.tar.gz"
+  - cd ../test-sandbox-quickcheck
+  - cabal install --only-dependencies --enable-tests
+  - "cabal configure --enable-tests --ghc-options=-Werror && cabal build && cabal test "
+  - "cabal sdist && cabal install dist/test-sandbox-quickcheck-*.tar.gz"
+  - cd ../test-framework-sandbox
+  - cabal install --only-dependencies --enable-tests
+  - "cabal configure --enable-tests --ghc-options=-Werror && cabal build && cabal test "
+  - "cabal sdist && cabal install dist/test-framework-sandbox-*.tar.gz"

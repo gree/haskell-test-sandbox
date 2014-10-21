@@ -26,11 +26,6 @@ module Test.Framework.Providers.Sandbox (
 import Control.Exception.Lifted
 import Control.Monad hiding (fail)
 import Control.Monad.Reader (ask)
-import Control.Monad.Trans.Error (runErrorT)
-import Control.Monad.Trans.Reader (runReaderT)
-import Data.Either
-import Prelude hiding (error, fail)
-import qualified Prelude (error)
 import System.Console.ANSI
 import System.Environment
 import System.Exit
@@ -55,9 +50,9 @@ sandboxTests name tests = testGroup name [
       if isExcluded options name then return $ Test name (SandboxTest Skipped)
         else withSystemTempDirectory (name ++ "_") $ \dir -> do
                env <- newSandboxState name dir
-               result <- (runReaderT . runErrorT . runSandbox) (putOptions options >> sandboxTestGroup name tests `finally` stopAll) env
+               result <- runSandbox (putOptions options >> sandboxTestGroup name tests `finally` stopAll) env
                case result of
-                 Left error -> return $ Test name (SandboxTest (Failure error))
+                 Left error' -> return $ Test name (SandboxTest (Failure error'))
                  Right x -> return x
   ]
 
@@ -88,10 +83,10 @@ sandboxTest :: String       -- ^ Test name
 sandboxTest name test = withTest name $ do
   res <- do
     ref <- ask
-    liftIO $ flip (runReaderT . runErrorT . runSandbox) ref $ test `catches` handlers
+    liftIO $ flip runSandbox ref $ test `catches` handlers
   liftIO $ printTestResult res
   case res of
-    Left error -> return $ Test name (SandboxTest (Failure error))
+    Left error' -> return $ Test name (SandboxTest (Failure error'))
     Right _ -> return $ Test name (SandboxTest Passed)
   where handlers = [ Handler exitHandler
                    , Handler interruptHandler
@@ -110,7 +105,7 @@ yieldProgress :: String     -- ^ Text to display
 yieldProgress p = do
   pl <- getVariable prettyPrintVariable []
   unless (null pl) $ liftIO $ putStr " / "
-  setVariable prettyPrintVariable (p : pl)
+  _ <- setVariable prettyPrintVariable (p : pl)
   liftIO $ putStrColor Dull Blue p >> hFlush stdout
 
 ----------------------------------------------------------------------

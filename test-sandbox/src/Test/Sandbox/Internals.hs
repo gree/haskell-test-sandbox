@@ -5,21 +5,22 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Sandbox.Internals where
 
 import Control.Applicative (Applicative)
 import Control.Concurrent
-import Control.Exception.Lifted
+import Control.Exception.Lifted hiding (throwTo)
 import Control.Monad
 import Control.Monad.Base (MonadBase)
-import Control.Monad.Error (MonadError, catchError, throwError)
+import Control.Monad.Except (MonadError, catchError, throwError)
 import Control.Monad.Loops
 import Control.Monad.Reader (MonadReader, ask)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl (..))
-import Control.Monad.Trans.Error (ErrorT)
-import Control.Monad.Trans.Reader (ReaderT)
+import Control.Monad.Trans.Except (ExceptT, runExceptT)
+import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as B
 import Data.Char
@@ -32,8 +33,6 @@ import GHC.Generics (Generic)
 import GHC.IO.Handle
 import Network
 import Network.Socket
-import Prelude hiding (error)
-import qualified Prelude (error)
 import System.Directory
 import System.Exit
 import System.FilePath
@@ -44,17 +43,31 @@ import System.Process hiding (env, waitForProcess)
 import System.Process.Internals (withProcessHandle, ProcessHandle__(OpenHandle))
 import System.Random
 import System.Random.Shuffle
+import Test.Sandbox.Process
 
 type SandboxStateRef = IORef SandboxState
 
 newtype Sandbox a = Sandbox {
-    runSandbox :: ErrorT String (ReaderT SandboxStateRef IO) a
+    runSB :: ExceptT String (ReaderT SandboxStateRef IO) a
   } deriving (Applicative, Functor, Monad, MonadBase IO, MonadError String, MonadReader (IORef SandboxState), MonadIO)
 
 instance MonadBaseControl IO Sandbox where
-  newtype StM Sandbox a = StMSandbox { runStMSandbox :: StM (ErrorT String (ReaderT SandboxStateRef IO)) a }
-  liftBaseWith f = Sandbox . liftBaseWith $ \run -> f (liftM StMSandbox . run . runSandbox)
+  newtype StM Sandbox a = StMSandbox { runStMSandbox :: StM (ExceptT String (ReaderT SandboxStateRef IO)) a }
+  liftBaseWith f = Sandbox . liftBaseWith $ \run -> f (liftM StMSandbox . run . runSB)
   restoreM = Sandbox . restoreM . runStMSandbox
+
+runSandbox :: Sandbox a -> SandboxStateRef -> IO (Either String a)
+runSandbox = runReaderT . runExceptT . runSB
+
+errorHandler :: String -> IO a
+errorHandler error' = do
+  hPutStrLn stderr error'
+  throwIO $ userError error'
+
+runSandbox' :: SandboxStateRef -> Sandbox a -> IO a
+runSandbox' env' action = do
+  val <- runSandbox action env'
+  either errorHandler return val
 
 data SandboxState = SandboxState {
     ssName :: String
@@ -74,6 +87,8 @@ data SandboxedProcess = SandboxedProcess {
   , spWait :: Maybe Int
   , spCapture :: Maybe Capture
   , spInstance :: Maybe SandboxedProcessInstance
+  , spPid :: Maybe ProcessID
+  , spPGid :: Maybe ProcessGroupID
   }
 
 data Capture = CaptureStdout
@@ -117,7 +132,11 @@ newSandboxState :: String -> FilePath -> IO SandboxStateRef
 newSandboxState name dir = do
   gen <- newStdGen
   let availablePorts = shuffle' userPorts (length userPorts) gen
-                       where userPorts = [49152..65535]
+                       where userPorts = [5001..32767]
+      -- Ephemeral port is used by operating system which allocates it for tcp-client.
+      -- The port area is below.
+      -- IANN(freebsd and win7): [49152.. 65535],Linux: [32768..61000],WinXP: [1025..5000]
+      -- Do not use these area for "userPorts" to avoid conflict.
   newIORef $ SandboxState name dir M.empty [] M.empty availablePorts M.empty M.empty
 
 registerProcess ::
@@ -131,9 +150,10 @@ registerProcess name bin args wait capture = do
   env <- get
   if isJust (M.lookup name (ssProcesses env)) then
     throwError $ "Process " ++ name ++ " is already registered in the test environment."
-    else do let sp = SandboxedProcess name bin args wait capture Nothing
-            put env { ssProcesses = M.insert name sp (ssProcesses env)
-                    , ssProcessOrder = ssProcessOrder env ++ [name] }
+    else do let sp = SandboxedProcess name bin args wait capture Nothing Nothing Nothing
+            _ <- put env { ssProcesses = M.insert name sp (ssProcesses env)
+                         , ssProcessOrder = ssProcessOrder env ++ [name]
+                         }
             return sp
 
 isValidProcessName :: String -> Bool
@@ -156,7 +176,7 @@ getProcess name = do
                      Just oh' -> liftM Just $ liftIO $ hGetContents oh'
                      Nothing -> return Nothing
               let sp' = sp { spInstance = Just $ StoppedInstance ec' o }
-              updateProcess sp'
+              _ <- updateProcess sp'
               return sp'
             Nothing -> return sp
         _ -> return sp
@@ -165,7 +185,7 @@ getProcess name = do
 updateProcess :: SandboxedProcess -> Sandbox SandboxedProcess
 updateProcess sp = do
   env <- get
-  put env { ssProcesses = M.insert (spName sp) sp (ssProcesses env) }
+  _ <- put env { ssProcesses = M.insert (spName sp) sp (ssProcesses env) }
   return sp
 
 secondInµs :: Int
@@ -212,22 +232,66 @@ getNewPort name = do
   case ssAvailablePorts env of
     [] -> throwError "No user ports left."
     ports -> do (port, ports') <- liftIO $ takeBindablePort' ports
-                put env { ssAllocatedPorts = M.insert name port $ ssAllocatedPorts env
-                        , ssAvailablePorts = ports' }
+                _ <- put env { ssAllocatedPorts = M.insert name port $ ssAllocatedPorts env
+                             , ssAvailablePorts = ports' }
                 return port
   where takeBindablePort' pl = do
           pl' <- dropWhileM (liftM not . isBindable) pl
           return (head pl', tail pl')
 
+
+#if defined __LINUX__
+isBindable :: PortNumber -> IO Bool
+isBindable port = do
+  ports <- getPorts
+  return $ not $ S.member (fromIntegral port) $ S.unions $ (map S.singleton $ ports)
+  where
+    getPort :: String -> Maybe Int
+    getPort v =
+      if v =~ pattern
+        then
+          case (v =~ pattern) of
+            [[_str,port']] ->
+              case readHex port' of
+                [(port'',_)] -> Just port''
+                _ -> Nothing
+            _ -> Nothing
+        else Nothing
+      where
+        pattern = "^ *[0-9]+: [0-9A-F]+:([0-9A-F]+) .*"
+
+    getPorts :: IO [Int]
+    getPorts = do
+      let files = [
+            "/proc/net/tcp",
+            "/proc/net/tcp6",
+            "/proc/net/udp",
+            "/proc/net/udp6"]
+      list <- forM files $ \file -> do {
+        v <- readFile file ;
+        v `seq` return $ catMaybes $ map getPort $ lines v
+        } `catch` (\(_ :: SomeException) -> return [])
+      return $ flatten list
+      where
+        flatten :: [[a]] -> [a]
+        flatten [] = []
+        flatten (x:xs) = x ++ flatten xs
+
+#else
 isBindable :: PortNumber -> IO Bool
 isBindable p = withSocketsDo $ do
   s <- socket AF_INET Stream defaultProtocol
+  setSocketOption s ReuseAddr 1
   localhost <- inet_addr "127.0.0.1"
   let sa = SockAddrInet p localhost
   r <- (bind s sa >> isBound s)
          `catch` ((\_ -> return False) :: SomeException -> IO Bool)
   close s
   return $! r
+
+#endif
+
+
 
 startProcess :: SandboxedProcess -> Sandbox SandboxedProcess
 startProcess sp =
@@ -249,13 +313,20 @@ startProcess sp =
                                                              CaptureStderr -> return (Just hRO, Inherit, UseHandle hRW)
                                                              CaptureBoth -> return (Just hRO, UseHandle hRW, UseHandle hRW)
                                     Nothing -> return (Nothing, Inherit, Inherit)
-      (Just ih, _, _, ph) <- liftIO $ createProcess $ (proc bin args) { std_in = CreatePipe
+      (Just ih, _, _, ph) <- liftIO $ createProcess $ ((proc bin args) {create_group = True} ) { std_in = CreatePipe
                                                                       , std_out = hOutRW
                                                                       , std_err = hErrRW }
       when (isJust $ spWait sp) $ liftIO . threadDelay $ fromJust (spWait sp) * secondInµs
       errno <- liftIO $ getProcessExitCode ph
       case errno of
-        Nothing -> updateProcess sp { spInstance = Just $ RunningInstance ph ih hOutRO }
+        Nothing -> do
+          pid <- liftIO $ hGetProcessID ph
+          pgid <- liftIO $ getProcessGroupIDOf pid
+          updateProcess sp {
+            spInstance = Just $ RunningInstance ph ih hOutRO
+          , spPid = Just pid
+          , spPGid = Just pgid
+          }
         Just errno' -> throwError $ "Process " ++ spName sp ++ " not running.\n"
                                  ++ " - command-line: " ++ formatCommandLine bin args ++ "\n"
                                  ++ " - exit code: " ++ show errno' 
@@ -268,12 +339,32 @@ stopProcess sp =
   case spInstance sp of
     Just (RunningInstance ph _ _) -> do
       let wait = if isNothing $ spWait sp then 50000 else fromJust (spWait sp) * secondInµs `div` 5
+      whenM isVerbose $ liftIO $ putStrLn ("sending sigterm : " ++  spName sp)
       liftIO $ do terminateProcess ph
                   threadDelay wait
       stillRunning <- liftM isNothing $ liftIO $ getProcessExitCode ph
-      when stillRunning $ liftIO $ killProcess ph
+      when stillRunning $ do
+        whenM isVerbose $ liftIO $ putStrLn ("sending sigkill : " ++  spName sp)
+        liftIO $ killProcess ph
       stopProcess =<< getProcess (spName sp)
     _ -> return sp
+
+#if defined(__MACOSX__) ||  defined(__WIN32__)
+#else
+getAvailablePids :: Sandbox [ProcessID]
+getAvailablePids = do
+  stat <- get
+  let pgids = catMaybes (map (\(_k,v) -> spPGid v) (M.toList (ssProcesses stat)))
+  pids <- liftIO $ getProcessIDs pgids
+  return pids
+#endif
+
+cleanUpProcesses :: Sandbox ()
+cleanUpProcesses = do
+  stat <- get
+  let pgids = catMaybes (map (\(_k,v) -> spPGid v) (M.toList (ssProcesses stat)))
+  whenM isVerbose $ liftIO $ putStrLn ("Starting to kill process groups " ++ show pgids)
+  liftIO $ cleanUpProcessGroupIDs pgids
 
 hSignalProcess :: Signal -> ProcessHandle -> IO ()
 hSignalProcess s h = do
@@ -367,7 +458,7 @@ setVariable :: Serialize a
             -> Sandbox a
 setVariable name new = do
   env <- get
-  put $ env { ssVariables = M.insert name (encode new) (ssVariables env) }
+  _ <- put $ env { ssVariables = M.insert name (encode new) (ssVariables env) }
   return new
 
 -- | Checks that a custom sandbox variable is set.
@@ -402,6 +493,12 @@ isVerbose = getVariable verbosityKey True
 verbosityKey :: String
 verbosityKey = "__VERBOSITY__"
 
+isCleanUp :: Sandbox Bool
+isCleanUp = getVariable cleanUpKey True
+
+cleanUpKey :: String
+cleanUpKey = "__CLEANUP__"
+
 displayBanner :: Sandbox ()
 displayBanner = do
   displayed <- checkVariable var
@@ -412,9 +509,10 @@ displayBanner = do
 installSignalHandlers :: Sandbox ()
 installSignalHandlers = do
   installed <- checkVariable var
-  unless installed $ liftIO . void $ do installHandler sigTERM handler Nothing
-                                        installHandler sigQUIT handler Nothing
-                                        installHandler sigABRT handler Nothing
+  unless installed $ liftIO . void $ do _ <- installHandler sigTERM handler Nothing
+                                        _ <- installHandler sigQUIT handler Nothing
+                                        _ <- installHandler sigABRT handler Nothing
+                                        return ()
   void $ setVariable var True
   where var = "__HANDLERS_INSTALLED__"
         handler = Catch $ signalProcess sigINT =<< getProcessID
