@@ -1,3 +1,4 @@
+{-#LANGUAGE ScopedTypeVariables#-}
 {- |
    Module    : Test.Sandbox
    Maintainer: Benjamin Surma <benjamin.surma@gmail.com>
@@ -33,6 +34,11 @@ module Test.Sandbox (
 
   -- * Initialization
   , sandbox
+  , withSandbox
+
+  -- * Calling sandbox on IO
+  , runSandbox
+  , runSandbox'
 
   -- * Registering processes
   , register
@@ -80,8 +86,7 @@ import Control.Concurrent (threadDelay)
 import Control.Exception.Lifted
 import Control.Monad
 import Control.Monad.Trans (liftIO)
-import Control.Monad.Trans.Error (runErrorT)
-import Control.Monad.Trans.Reader (runReaderT)
+import Control.Monad.Reader (ask)
 import Control.Monad.Error.Class (catchError, throwError)
 import qualified Data.ByteString.Char8 as B
 import Data.Default
@@ -91,13 +96,19 @@ import Data.Maybe
 import Data.Serialize (Serialize)
 import Network hiding (sendTo)
 import Prelude hiding (error)
-import qualified Prelude (error)
 import System.Exit
 import System.IO
 import System.IO.Temp
 import System.Posix hiding (release)
+import System.Environment
 
 import Test.Sandbox.Internals
+
+cleanUp :: Sandbox ()
+cleanUp = do
+  stopAll
+  whenM isCleanUp $ do
+    cleanUpProcesses
 
 -- | Creates a sandbox and execute the given actions in the IO monad.
 sandbox :: String    -- ^ Name of the sandbox environment
@@ -105,10 +116,17 @@ sandbox :: String    -- ^ Name of the sandbox environment
         -> IO a
 sandbox name actions = withSystemTempDirectory (name ++ "_") $ \dir -> do
   env <- newSandboxState name dir
-  (runReaderT . runErrorT . runSandbox) (actions `finally` stopAll) env >>= either
+  runSandbox (actions `finally` cleanUp) env >>= either
     (\error -> do hPutStrLn stderr error
                   throwIO $ userError error)
     return
+
+withSandbox :: (SandboxStateRef -> IO a) -> IO a
+withSandbox actions = do
+  name <- getProgName
+  sandbox name $ do
+    ref <- ask
+    liftIO $ actions ref
 
 -- | Optional parameters when registering a process in the Sandbox monad.
 data ProcessSettings = ProcessSettings {
@@ -155,14 +173,14 @@ start process = uninterruptibleMask_ $ do
   displayBanner
   sp <- getProcess process
   whenM isVerbose $ liftIO $ putStr ("Starting process " ++ process ++ "... ") >> hFlush stdout
-  updateProcess =<< startProcess sp
+  _ <- updateProcess =<< startProcess sp
   whenM isVerbose $ liftIO $ putStrLn "Done."
 
 -- | Starts all registered processes (in their registration order)
 startAll :: Sandbox ()
 startAll = uninterruptibleMask_ $ do
   displayBanner
-  whenM isVerbose $ liftIO $ putStr "Starting all sandbox processes... " >> hFlush stdout
+  whenM isVerbose $ liftIO $ putStrLn "Starting all sandbox processes... " >> hFlush stdout
   silently $ do env <- get
                 mapM_ start (ssProcessOrder env)
   whenM isVerbose $ liftIO $ putStrLn "Done."
@@ -182,9 +200,9 @@ stop :: String     -- ^ Process name
      -> Sandbox ()
 stop process = uninterruptibleMask_ $ do
   sp <- getProcess process
-  whenM isVerbose $ liftIO $ putStr ("Stopping process " ++ process ++ "... ") >> hFlush stdout
-  updateProcess =<< stopProcess sp
-  whenM isVerbose $ liftIO $ putStrLn "Done."
+  whenM isVerbose $ liftIO $ putStrLn ("Stopping process " ++ process ++ "("++ show (spPid sp) ++ ")... ") >> hFlush stdout
+  _ <- updateProcess =<< stopProcess sp
+  whenM isVerbose $ liftIO $ putStrLn "Done." >> hFlush stdout
 
 -- | Sends a POSIX signal to a process
 signal :: String     -- ^ Process name
@@ -200,8 +218,8 @@ signal process sig = uninterruptibleMask_ $ do
 stopAll :: Sandbox ()
 stopAll = uninterruptibleMask_ $ do
   whenM isVerbose $ liftIO $ putStr "Stopping all sandbox processes... " >> hFlush stdout
-  silently $ do env <- get
-                mapM_ stop (reverse $ ssProcessOrder env)
+  env <- get
+  mapM_ stop (reverse $ ssProcessOrder env)
   whenM isVerbose $ liftIO $ putStrLn "Done."
 
 -- | Returns the effective binary path of a registered process.
@@ -253,7 +271,7 @@ setPort name port = do
   let port' = fromIntegral port
   bindable <- liftIO $ isBindable (fromIntegral port)
   if bindable then do env <- get
-                      put (env { ssAllocatedPorts = M.insert name port' $ ssAllocatedPorts env })
+                      _ <- put (env { ssAllocatedPorts = M.insert name port' $ ssAllocatedPorts env })
                       return port'
     else throwError $ "Unable to bind port " ++ show port
 
@@ -264,7 +282,7 @@ setFile :: String           -- ^ File name for future reference
 setFile name contents = do
   env <- get
   (file, env') <- liftIO $ setFile' name contents env
-  put env'
+  _ <- put env'
   return file
 
 -- | Returns the path of a file previously created by setFile.
@@ -284,7 +302,7 @@ withVariable :: (Serialize a)
              -> Sandbox b
 withVariable key value action = bracket (do env <- get
                                             let old = M.lookup key $ ssVariables env
-                                            setVariable key value
+                                            _ <- setVariable key value
                                             return old)
                                         (\old -> case old of
                                                    Nothing -> unsetVariable key

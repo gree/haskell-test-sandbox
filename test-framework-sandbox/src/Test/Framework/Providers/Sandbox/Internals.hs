@@ -10,10 +10,7 @@ module Test.Framework.Providers.Sandbox.Internals where
 
 import Control.Concurrent
 import Control.Monad hiding (fail)
-import Data.Either
 import Data.Typeable
-import Prelude hiding (error, fail)
-import qualified Prelude (error)
 import System.Console.ANSI
 import System.IO
 
@@ -53,14 +50,14 @@ instance TestResultlike SandboxTestRunning SandboxTestResult where
 instance Testlike SandboxTestRunning SandboxTestResult SandboxTest where
   testTypeName _ = "Sandbox tests"
   runTest _ (SandboxTest res) = runImprovingIO $ return res
-  runTest _ (SandboxCleaning mvar) = runImprovingIO $ do TF.liftIO $ takeMVar mvar
+  runTest _ (SandboxCleaning mvar) = runImprovingIO $ do _ <- TF.liftIO $ takeMVar mvar -- ToDo: Why this return-value is dicarded?
                                                          return Passed
 
 withTest :: String -> Sandbox b -> Sandbox b
 withTest name action = withVariable testVariable name $
   bracket (do level <- getVariable testLevelVariable 0
               liftIO $ printTestName level name
-              setVariable testLevelVariable $! level + 1
+              _ <- setVariable testLevelVariable $! level + 1
               return level)
           (setVariable testLevelVariable)
           (const action)
@@ -84,7 +81,7 @@ printTestName l t =
 printTestResult :: Either String a -> IO ()
 printTestResult r =
   case r of
-    Left error -> putStr " [" >> putStrColor Vivid Red "Fail" >> putStrLn ("] " ++ error)
+    Left error' -> putStr " [" >> putStrColor Vivid Red "Fail" >> putStrLn ("] " ++ error')
     _ -> putStr " [" >> putStrColor Vivid Green "OK" >> putStrLn "]"
 
 putStrColor :: ColorIntensity -> Color -> String -> IO ()

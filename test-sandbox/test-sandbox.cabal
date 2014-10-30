@@ -1,5 +1,5 @@
 Name:           test-sandbox
-Version:        0.0.1.8
+Version:        0.0.1.9
 Cabal-Version:  >= 1.14
 Category:       Testing
 Synopsis:       Sandbox for system tests
@@ -25,18 +25,42 @@ Source-Repository head
 Source-Repository this
     Type:       git
     Location:   https://github.com/gree/haskell-test-sandbox
-    Tag:        test-sandbox_0.0.1.8
+    Tag:        test-sandbox_0.0.1.9
 
 Library
     Exposed-modules:    Test.Sandbox
                         Test.Sandbox.Internals
+                        Test.Sandbox.Process
 
     Build-Depends:      base >=4 && <5, bytestring, cereal, containers,
                         data-default, directory, filepath, lifted-base,
                         monad-control, monad-loops, mtl, network, process,
-                        random, random-shuffle, temporary, transformers,
-                        transformers-base, unix
+                        random, random-shuffle, temporary, transformers >= 0.4,
+                        transformers-base, unix, regex-posix
 
     Hs-source-dirs:     src
+    Default-Language:   Haskell2010
+    ghc-options:       -Wall
 
+test-suite test
+    type:              exitcode-stdio-1.0
+    main-is:           test.hs
+    hs-source-dirs:    test,dist/build/autogen
+    ghc-options:       -Wall
+
+    build-depends: base
+                 , test-sandbox
+                 , hspec
+                 , template-haskell
+                 , heredoc
+                 , hastache
+                 , text
+                 , containers
+                 , unix
+                 , mtl
+                 , transformers
+                 , regex-posix
+                 , directory
+                 , process
+                 , QuickCheck
     Default-Language:   Haskell2010
