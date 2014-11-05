@@ -21,6 +21,7 @@ module Test.Framework.Providers.Sandbox (
   , sandboxTestGroup
   , sandboxTestGroup'
   , yieldProgress
+  , withRetry
   ) where
 
 import Control.Exception.Lifted
@@ -34,6 +35,7 @@ import System.IO.Temp
 
 import Test.Framework
 import Test.Framework.Providers.API (Test (..))
+import Data.Typeable
 
 import Test.Sandbox
 import Test.Sandbox.Internals hiding (putOptions)
@@ -107,6 +109,35 @@ yieldProgress p = do
   unless (null pl) $ liftIO $ putStr " / "
   _ <- setVariable prettyPrintVariable (p : pl)
   liftIO $ putStrColor Dull Blue p >> hFlush stdout
+
+class SandboxRetry a where
+  withRetry :: Int -> Sandbox a -> Sandbox a
+
+instance SandboxRetry Test where
+  withRetry num action =
+    if num <= 1
+      then action
+      else do
+        res <- action
+        if isPassed res
+          then return res
+          else withRetry (num - 1) action
+
+isPassed :: Test -> Bool
+isPassed test =
+  case test of
+    (Test _ res') ->
+      case cast res' of
+        (Just (SandboxTest Passed)) -> True
+        _ -> False
+    (TestGroup _ tests) -> and $ map isPassed tests
+    _ -> error "withRetry does not support this test-type."
+
+instance SandboxRetry () where
+  withRetry num action =
+    if num <= 1
+      then action
+      else action `catchError` (\_ -> withRetry (num - 1) action)
 
 ----------------------------------------------------------------------
 -- Docs
