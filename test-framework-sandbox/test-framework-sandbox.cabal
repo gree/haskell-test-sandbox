@@ -1,5 +1,5 @@
 Name:           test-framework-sandbox
-Version:        0.0.2.4
+Version:        0.0.2.5
 Cabal-Version:  >= 1.14
 Category:       Testing
 Synopsis:       test-sandbox support for the test-framework package
@@ -29,7 +29,7 @@ Source-Repository head
 Source-Repository this
     Type:       git
     Location:   https://github.com/gree/haskell-test-sandbox
-    Tag:        test-framework-sandbox_0.0.2.4
+    Tag:        test-framework-sandbox_0.0.2.5
 
 Library
     Exposed-modules:    Test.Framework.Providers.Sandbox
@@ -44,3 +44,14 @@ Library
     Default-Language:   Haskell2010
 
     ghc-options:       -Wall
+
+Test-Suite test
+  Ghc-Options:     -threaded
+  Type:            exitcode-stdio-1.0
+  Build-Depends:   base >=4 && <5
+                 , HUnit
+                 , test-framework >= 0.8.0.3
+                 , test-framework-sandbox == 0.0.2.*
+                 , test-sandbox == 0.0.1.*
+                 , test-sandbox-hunit == 0.0.1.*
+  Main-Is:         test/test.hs
