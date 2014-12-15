@@ -51,8 +51,16 @@ newtype Sandbox a = Sandbox {
     runSB :: ExceptT String (ReaderT SandboxStateRef IO) a
   } deriving (Applicative, Functor, Monad, MonadBase IO, MonadError String, MonadReader (IORef SandboxState), MonadIO)
 
+#if MIN_VERSION_monad_control(1,0,0)
+newtype StMSandbox a = StMSandbox { runStMSandbox :: StM (ExceptT String (ReaderT SandboxStateRef IO)) a }
+#endif
+
 instance MonadBaseControl IO Sandbox where
+#if MIN_VERSION_monad_control(1,0,0)
+  type StM Sandbox a = StMSandbox a
+#else
   newtype StM Sandbox a = StMSandbox { runStMSandbox :: StM (ExceptT String (ReaderT SandboxStateRef IO)) a }
+#endif
   liftBaseWith f = Sandbox . liftBaseWith $ \run -> f (liftM StMSandbox . run . runSB)
   restoreM = Sandbox . restoreM . runStMSandbox
 
