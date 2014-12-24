@@ -39,7 +39,11 @@ import System.FilePath
 import System.IO
 import System.IO.Error (isEOFError, tryIOError)
 import System.Posix hiding (killProcess)
+#if MIN_VERSION_process(1,2,1)
+import System.Process hiding (env, waitForProcess, createPipe)
+#else
 import System.Process hiding (env, waitForProcess)
+#endif
 import System.Process.Internals (withProcessHandle, ProcessHandle__(OpenHandle))
 import System.Random
 import System.Random.Shuffle
