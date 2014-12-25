@@ -25,3 +25,7 @@ script:
   - cabal install --only-dependencies --enable-tests
   - "cabal configure --enable-tests --ghc-options=-Werror && cabal build && cabal test "
   - "cabal sdist && cabal install dist/test-framework-sandbox-*.tar.gz"
+  - cd ../hspec-test-sandbox
+  - cabal install --only-dependencies --enable-tests
+  - "cabal configure --enable-tests --ghc-options=-Werror && cabal build && cabal test "
+  - "cabal sdist && cabal install dist/hspec-test-sandbox-*.tar.gz"
