@@ -49,6 +49,7 @@ import System.Random
 import System.Random.Shuffle
 import Test.Sandbox.Process
 
+type Port = Int
 type SandboxStateRef = IORef SandboxState
 
 newtype Sandbox a = Sandbox {
@@ -86,8 +87,8 @@ data SandboxState = SandboxState {
   , ssDataDir :: FilePath
   , ssProcesses :: Map String SandboxedProcess
   , ssProcessOrder :: [String]
-  , ssAllocatedPorts :: Map String PortNumber
-  , ssAvailablePorts :: [PortNumber]
+  , ssAllocatedPorts :: Map String Port
+  , ssAvailablePorts :: [Port]
   , ssFiles :: Map String FilePath
   , ssVariables :: Map String ByteString
   }
@@ -101,13 +102,18 @@ data SandboxedProcess = SandboxedProcess {
   , spInstance :: Maybe SandboxedProcessInstance
   , spPid :: Maybe ProcessID
   , spPGid :: Maybe ProcessGroupID
+  , spHandles :: [Handle]
   }
 
-data Capture = CaptureStdout
-               | CaptureStderr
-               | CaptureBoth
+data Capture =
+    CaptureStdout
+  | CaptureStderr
+  | CaptureBoth
+  | CaptureStdoutWithFile FilePath
+  | CaptureStderrWithFile FilePath
+  | CaptureBothWithFile FilePath FilePath
 
-data SandboxedProcessInstance = RunningInstance ProcessHandle Handle (Maybe Handle)
+data SandboxedProcessInstance = RunningInstance ProcessHandle Handle (Maybe Handle) [Handle]
                               | StoppedInstance ExitCode (Maybe String)
 
 get :: Sandbox SandboxState
@@ -162,7 +168,7 @@ registerProcess name bin args wait capture = do
   env <- get
   if isJust (M.lookup name (ssProcesses env)) then
     throwError $ "Process " ++ name ++ " is already registered in the test environment."
-    else do let sp = SandboxedProcess name bin args wait capture Nothing Nothing Nothing
+    else do let sp = SandboxedProcess name bin args wait capture Nothing Nothing Nothing []
             _ <- put env { ssProcesses = M.insert name sp (ssProcesses env)
                          , ssProcessOrder = ssProcessOrder env ++ [name]
                          }
@@ -180,7 +186,7 @@ getProcess name = do
   case M.lookup name (ssProcesses env) of
     Just sp -> let spi = spInstance sp in
       case spi of
-        Just (RunningInstance ph _ oh) -> do
+        Just (RunningInstance ph _ oh _) -> do
           ec <- liftIO $ getProcessExitCode ph
           case ec of
             Just ec' -> do -- Process is dead; update the environment
@@ -231,14 +237,14 @@ sendToPort name input timeout = do
   env <- get
   case M.lookup name (ssAllocatedPorts env) of
     Nothing -> throwError $ "No such allocated port: " ++ name
-    Just port -> do h <- liftIO . withSocketsDo $ connectTo "localhost" $ PortNumber port
+    Just port -> do h <- liftIO . withSocketsDo $ connectTo "localhost" $ PortNumber $ PortNum $ fromIntegral port
                     liftIO $ do B.hPutStr h $ B.pack input
                                 hFlush h
                     b <- hReadWithTimeout h timeout
                     liftIO $ hClose h
                     return $! B.unpack b
 
-getNewPort :: String -> Sandbox PortNumber
+getNewPort :: String -> Sandbox Port
 getNewPort name = do
   env <- get
   case ssAvailablePorts env of
@@ -253,7 +259,7 @@ getNewPort name = do
 
 
 #if defined __LINUX__
-isBindable :: PortNumber -> IO Bool
+isBindable :: Port -> IO Bool
 isBindable port = do
   ports <- getPorts
   return $ not $ S.member (fromIntegral port) $ S.unions $ (map S.singleton $ ports)
@@ -290,12 +296,12 @@ isBindable port = do
         flatten (x:xs) = x ++ flatten xs
 
 #else
-isBindable :: PortNumber -> IO Bool
+isBindable :: Port -> IO Bool
 isBindable p = withSocketsDo $ do
   s <- socket AF_INET Stream defaultProtocol
   setSocketOption s ReuseAddr 1
   localhost <- inet_addr "127.0.0.1"
-  let sa = SockAddrInet p localhost
+  let sa = SockAddrInet (PortNum (fromIntegral p)) localhost
   r <- (bind s sa >> isBound s)
          `catch` ((\_ -> return False) :: SomeException -> IO Bool)
   close s
@@ -316,26 +322,39 @@ startProcess sp =
     startProcess' = do
       bin <- getProcessBinary sp
       args <- mapM (liftIO . expand) $ spArgs sp
-      (hOutRO, hOutRW, hErrRW) <- case spCapture sp of
-                                    Just co -> liftIO $ do (pRO, pRW) <- createPipe
-                                                           hRO <- fdToHandle pRO
-                                                           hRW <- fdToHandle pRW
-                                                           case co of
-                                                             CaptureStdout -> return (Just hRO, UseHandle hRW, Inherit)
-                                                             CaptureStderr -> return (Just hRO, Inherit, UseHandle hRW)
-                                                             CaptureBoth -> return (Just hRO, UseHandle hRW, UseHandle hRW)
-                                    Nothing -> return (Nothing, Inherit, Inherit)
-      (Just ih, _, _, ph) <- liftIO $ createProcess $ ((proc bin args) {create_group = True} ) { std_in = CreatePipe
+      (hOutRO, hOutRW, hErrRW, handles) <- case spCapture sp of
+        Just co -> liftIO $ do
+          (pRO, pRW) <- createPipe
+          hRO <- fdToHandle pRO
+          hRW <- fdToHandle pRW
+          case co of
+            CaptureStdout -> return (Just hRO, UseHandle hRW, Inherit, [])
+            CaptureStderr -> return (Just hRO, Inherit, UseHandle hRW, [])
+            CaptureBoth -> return (Just hRO, UseHandle hRW, UseHandle hRW, [])
+            CaptureStdoutWithFile filepath_o -> do
+              hd <- openFile filepath_o WriteMode
+              return (Nothing, UseHandle hd, Inherit, [hd])
+            CaptureStderrWithFile filepath_e -> do
+              hd <- openFile filepath_e WriteMode
+              return (Nothing, Inherit, UseHandle hd, [hd])
+            CaptureBothWithFile filepath_o filepath_e-> do
+              hdo <- openFile filepath_o WriteMode
+              hde <- openFile filepath_e WriteMode
+              return (Nothing, UseHandle hdo, UseHandle hde, [hdo,hde])
+        Nothing -> return (Nothing, Inherit, Inherit, [])
+      (Just ih, _, _, ph) <- liftIO $ createProcess $ (proc bin args) {create_group = True
+                                                                      , std_in = CreatePipe
                                                                       , std_out = hOutRW
                                                                       , std_err = hErrRW }
-      when (isJust $ spWait sp) $ liftIO . threadDelay $ fromJust (spWait sp) * secondInµs
+      when (isJust $ spWait sp) $ do
+        liftIO . threadDelay $ fromJust (spWait sp) * secondInµs
       errno <- liftIO $ getProcessExitCode ph
       case errno of
         Nothing -> do
           pid <- liftIO $ hGetProcessID ph
           pgid <- liftIO $ getProcessGroupIDOf pid
           updateProcess sp {
-            spInstance = Just $ RunningInstance ph ih hOutRO
+            spInstance = Just $ RunningInstance ph ih hOutRO handles
           , spPid = Just pid
           , spPGid = Just pgid
           }
@@ -349,15 +368,18 @@ formatCommandLine bin args = unwords $ bin : args
 stopProcess :: SandboxedProcess -> Sandbox SandboxedProcess
 stopProcess sp =
   case spInstance sp of
-    Just (RunningInstance ph _ _) -> do
+    Just (RunningInstance ph _ _ handles) -> do
       let wait = if isNothing $ spWait sp then 50000 else fromJust (spWait sp) * secondInµs `div` 5
       whenM isVerbose $ liftIO $ putStrLn ("sending sigterm : " ++  spName sp)
       liftIO $ do terminateProcess ph
                   threadDelay wait
       stillRunning <- liftM isNothing $ liftIO $ getProcessExitCode ph
       when stillRunning $ do
-        whenM isVerbose $ liftIO $ putStrLn ("sending sigkill : " ++  spName sp)
-        liftIO $ killProcess ph
+        whenM isVerbose $
+          liftIO $ putStrLn ("sending sigkill : " ++ spName sp)
+        liftIO $ do
+          killProcess ph
+          forM_ handles hClose
       stopProcess =<< getProcess (spName sp)
     _ -> return sp
 
@@ -408,14 +430,14 @@ interactWithProcess sp input timeout = do
 getProcessInputHandle :: SandboxedProcess -> Sandbox Handle
 getProcessInputHandle sp =
     case spInstance sp of
-      Just (RunningInstance _ ih _) -> return ih
+      Just (RunningInstance _ ih _ _) -> return ih
       _ -> throwError $ "No such handle for " ++ spName sp ++ ". "
                      ++ "Is the process started?"
 
 getProcessCapturedOutputHandle :: SandboxedProcess -> Sandbox Handle
 getProcessCapturedOutputHandle sp =
   case spInstance sp of
-    Just (RunningInstance _ _ (Just oh)) -> return oh
+    Just (RunningInstance _ _ (Just oh) _) -> return oh
     _ -> throwError $ "No captured output handle for " ++ spName sp ++ ". "
                    ++ "Is capture activated?"
 
