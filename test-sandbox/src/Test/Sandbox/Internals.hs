@@ -339,6 +339,13 @@ startProcess sp =
           , spPid = Just pid
           , spPGid = Just pgid
           }
+        Just ExitSuccess -> do
+          mStr <- case hOutRO of
+            Just h -> liftM Just $ liftIO $ hGetContents h
+            Nothing -> return Nothing
+          updateProcess sp {
+            spInstance = Just $ StoppedInstance ExitSuccess mStr
+          }
         Just errno' -> throwError $ "Process " ++ spName sp ++ " not running.\n"
                                  ++ " - command-line: " ++ formatCommandLine bin args ++ "\n"
                                  ++ " - exit code: " ++ show errno' 
