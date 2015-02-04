@@ -14,6 +14,7 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Text as T
 import qualified Data.Map as M
 import System.Posix.Files
+import System.Exit (ExitCode(..))
 import Data.IORef
 import Data.Char
 import Control.Concurrent
@@ -74,6 +75,24 @@ main = withSandbox $ \gref -> do
           runSandbox' ref I.isVerbose `shouldReturn` False
           _ <- runSandbox' ref $ setVariable I.verbosityKey True
           runSandbox' ref I.isVerbose `shouldReturn` True
+      it ": run" $ do
+        withSandbox $ \ref -> runSandbox' ref $ do
+          file <- setFile "echoecho"
+                  [str|#!/usr/bin/env bash
+                      |echo "echoecho"
+                      |]
+          liftIO $ setExecuteMode file
+
+          pname1 <- register "echo1" file [] def
+          (exitCode1, mStr1) <- run pname1 1
+          liftIO $ exitCode1 `shouldBe` ExitSuccess
+          liftIO $ mStr1 `shouldBe` Nothing
+
+          pname2 <- register "echo2" file [] def { psCapture = Just CaptureStdout }
+          (exitCode2, mStr2) <- run pname2 1
+          liftIO $ exitCode2 `shouldBe` ExitSuccess
+          liftIO $ mStr2 `shouldBe` Just "echoecho\n"
+
 #if defined(__MACOSX__) ||  defined(__WIN32__)
 #else
     describe "signal test" $ do
