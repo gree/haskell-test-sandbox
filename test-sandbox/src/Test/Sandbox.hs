@@ -94,7 +94,6 @@ import Data.Either
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Serialize (Serialize)
-import Network hiding (sendTo)
 import Prelude hiding (error)
 import System.Exit
 import System.IO
@@ -211,7 +210,7 @@ signal :: String     -- ^ Process name
 signal process sig = uninterruptibleMask_ $ do
   sp <- getProcess process
   case spInstance sp of
-    Just (RunningInstance ph _ _) -> liftIO $ hSignalProcess sig ph
+    Just (RunningInstance ph _ _ _) -> liftIO $ hSignalProcess sig ph
     _ -> throwError $ "Process " ++ process ++ " is not running."
 
 -- | Gracefully stops all registered processes (in their reverse registration order)
@@ -256,7 +255,7 @@ interactWith process input timeout = do
 
 -- | Returns an unbound user TCP port and stores it for future reference.
 getPort :: String             -- ^ Port name for future reference
-        -> Sandbox PortNumber
+        -> Sandbox Port
 getPort name = do
   env <- get
   case M.lookup name $ ssAllocatedPorts env of
@@ -266,7 +265,7 @@ getPort name = do
 -- | Explicitely sets a port to be returned by getPort.
 setPort :: String             -- ^ Port name for future reference
         -> Int                -- ^ TCP port number
-        -> Sandbox PortNumber
+        -> Sandbox Port
 setPort name port = do
   let port' = fromIntegral port
   bindable <- liftIO $ isBindable (fromIntegral port)
