@@ -2,7 +2,8 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE CPP #-}
-import Test.Hspec
+import Test.Hspec hiding (shouldReturn,shouldBe)
+import Test.Hspec.Expectations.Lifted
 import Test.QuickCheck
 import Test.QuickCheck.Monadic (assert,monadicIO)
 import Test.Sandbox
@@ -37,6 +38,35 @@ main :: IO ()
 main = withSandbox $ \gref -> do
   hspec $ do
     describe "Basic Test" $ do
+      it "Run nc : port 12181" $ do
+        runSandbox' gref $ do
+          file <- setFile "ncfile1"
+                  [str|#!/usr/bin/env bash
+                      |echo hoge | nc -l 12181
+                      |]
+          liftIO $ setExecuteMode file
+          start =<< register "ncserver1" file [] def { psCapture = Just CaptureStdout }
+      it "isBinable' 12181" $ do
+        I.isBindable' 12181 `shouldReturn` False
+      it "isBinable' 12180" $ do
+        I.isBindable' 12180 `shouldReturn` True
+      it "Test isBinable 12181" $ do
+        I.isBindable 12181 `shouldReturn` False
+      it "Test isBinable 12180" $ do
+        I.isBindable 12180 `shouldReturn` True
+      it "Test sendTo" $ do
+        runSandbox' gref $ do
+          p <- getPort "ncport"
+          file <- setFile' "ncfile"
+                  [("port",p)]
+                  [str|#!/usr/bin/env bash
+                      |echo hoge | nc -l {{port}}
+                      |]
+          liftIO $ I.isBindable p `shouldReturn` True
+          liftIO $ setExecuteMode file
+          start =<< register "ncserver" file [] def { psCapture = Just CaptureStdout }
+          liftIO $ I.isBindable p `shouldReturn` False
+          sendTo "ncport" "hogehoge\n" 1 `shouldReturn` "hoge\n"
       it "interactive Test by sandbox" $ do
         sandbox "hogehoge" $ do
           start =<< register "sed_regex" "sed" [ "-u", "s/a/b/" ] def { psCapture = Just CaptureStdout }
