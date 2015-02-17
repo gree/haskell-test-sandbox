@@ -28,7 +28,7 @@ Source-Repository head
 Source-Repository this
     Type:       git
     Location:   https://github.com/gree/haskell-test-sandbox
-    Tag:        test-sandbox_0.1.0
+    Tag:        test-sandbox_0.1.1
 
 Library
     Exposed-modules:    Test.Sandbox
