@@ -1,5 +1,5 @@
 Name:           test-sandbox
-Version:        0.1.0
+Version:        0.1.1
 Cabal-Version:  >= 1.14
 Category:       Testing
 Synopsis:       Sandbox for system tests
@@ -35,11 +35,27 @@ Library
                         Test.Sandbox.Internals
                         Test.Sandbox.Process
 
-    Build-Depends:      base >=4 && <5, bytestring, cereal, containers,
-                        data-default, directory, filepath, lifted-base,
-                        monad-control, monad-loops, mtl, network, process,
-                        random, random-shuffle, temporary, transformers >= 0.4,
-                        transformers-base, unix, regex-posix
+    Build-Depends:      base >=4 && <5
+                      , bytestring
+                      , cereal
+                      , containers
+                      , data-default
+                      , directory
+                      , filepath
+                      , lifted-base
+                      , monad-control
+                      , monad-loops
+                      , mtl
+                      , network
+                      , process
+                      , random
+                      , random-shuffle
+                      , temporary
+                      , transformers             >= 0.2      && < 0.5
+                      , transformers-compat      >= 0.3      && < 0.5
+                      , transformers-base
+                      , unix
+                      , regex-posix
 
     Hs-source-dirs:     src
     Default-Language:   Haskell2010
@@ -54,6 +70,7 @@ test-suite test
     build-depends: base
                  , test-sandbox
                  , hspec
+                 , hspec-expectations-lifted
                  , template-haskell
                  , heredoc
                  , hastache
@@ -62,6 +79,7 @@ test-suite test
                  , unix
                  , mtl
                  , transformers
+                 , transformers-compat
                  , regex-posix
                  , directory
                  , process

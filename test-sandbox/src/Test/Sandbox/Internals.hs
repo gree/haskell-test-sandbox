@@ -237,7 +237,7 @@ sendToPort name input timeout = do
   env <- get
   case M.lookup name (ssAllocatedPorts env) of
     Nothing -> throwError $ "No such allocated port: " ++ name
-    Just port -> do h <- liftIO . withSocketsDo $ connectTo "localhost" $ PortNumber $ PortNum $ fromIntegral port
+    Just port -> do h <- liftIO . withSocketsDo $ connectTo "localhost" $ PortNumber $ fromIntegral port
                     liftIO $ do B.hPutStr h $ B.pack input
                                 hFlush h
                     b <- hReadWithTimeout h timeout
@@ -256,6 +256,18 @@ getNewPort name = do
   where takeBindablePort' pl = do
           pl' <- dropWhileM (liftM not . isBindable) pl
           return (head pl', tail pl')
+
+
+isBindable' :: Port -> IO Bool
+isBindable' p = withSocketsDo $ do
+  s <- socket AF_INET Stream defaultProtocol
+  setSocketOption s ReuseAddr 1
+  localhost <- inet_addr "127.0.0.1"
+  let sa = SockAddrInet (fromIntegral p) localhost
+  r <- (bind s sa >> isBound s)
+         `catch` ((\_ -> return False) :: SomeException -> IO Bool)
+  close s
+  return $! r
 
 
 #if defined __LINUX__
@@ -297,16 +309,7 @@ isBindable port = do
 
 #else
 isBindable :: Port -> IO Bool
-isBindable p = withSocketsDo $ do
-  s <- socket AF_INET Stream defaultProtocol
-  setSocketOption s ReuseAddr 1
-  localhost <- inet_addr "127.0.0.1"
-  let sa = SockAddrInet (PortNum (fromIntegral p)) localhost
-  r <- (bind s sa >> isBound s)
-         `catch` ((\_ -> return False) :: SomeException -> IO Bool)
-  close s
-  return $! r
-
+isBindable = isBindable'
 #endif
 
 
