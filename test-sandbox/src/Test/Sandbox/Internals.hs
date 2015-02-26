@@ -14,12 +14,17 @@ import Control.Concurrent
 import Control.Exception.Lifted hiding (throwTo)
 import Control.Monad
 import Control.Monad.Base (MonadBase)
+#if MIN_VERSION_mtl(2,2,1)
 import Control.Monad.Except (MonadError, catchError, throwError)
+import Control.Monad.Trans.Except (ExceptT, runExceptT)
+#else
+import Control.Monad.Error (MonadError, catchError, throwError)
+import Control.Monad.Trans.Error (ErrorT, runErrorT)
+#endif
 import Control.Monad.Loops
 import Control.Monad.Reader (MonadReader, ask)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl (..))
-import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as B
@@ -49,28 +54,39 @@ import System.Random
 import System.Random.Shuffle
 import Test.Sandbox.Process
 
+#if MIN_VERSION_mtl(2,2,1)
+type ExceptT' = ExceptT
+runExceptT' :: ExceptT e m a -> m (Either e a)
+runExceptT' = runExceptT
+#else
+runExceptT' :: ErrorT e m a -> m (Either e a)
+type ExceptT' = ErrorT
+runExceptT' = runErrorT
+#endif
+
+
 type Port = Int
 type SandboxStateRef = IORef SandboxState
 
 newtype Sandbox a = Sandbox {
-    runSB :: ExceptT String (ReaderT SandboxStateRef IO) a
+    runSB :: ExceptT' String (ReaderT SandboxStateRef IO) a
   } deriving (Applicative, Functor, Monad, MonadBase IO, MonadError String, MonadReader (IORef SandboxState), MonadIO)
 
 #if MIN_VERSION_monad_control(1,0,0)
-newtype StMSandbox a = StMSandbox { runStMSandbox :: StM (ExceptT String (ReaderT SandboxStateRef IO)) a }
+newtype StMSandbox a = StMSandbox { runStMSandbox :: StM (ExceptT' String (ReaderT SandboxStateRef IO)) a }
 #endif
 
 instance MonadBaseControl IO Sandbox where
 #if MIN_VERSION_monad_control(1,0,0)
   type StM Sandbox a = StMSandbox a
 #else
-  newtype StM Sandbox a = StMSandbox { runStMSandbox :: StM (ExceptT String (ReaderT SandboxStateRef IO)) a }
+  newtype StM Sandbox a = StMSandbox { runStMSandbox :: StM (ExceptT' String (ReaderT SandboxStateRef IO)) a }
 #endif
   liftBaseWith f = Sandbox . liftBaseWith $ \run -> f (liftM StMSandbox . run . runSB)
   restoreM = Sandbox . restoreM . runStMSandbox
 
 runSandbox :: Sandbox a -> SandboxStateRef -> IO (Either String a)
-runSandbox = runReaderT . runExceptT . runSB
+runSandbox = runReaderT . runExceptT' . runSB
 
 errorHandler :: String -> IO a
 errorHandler error' = do
