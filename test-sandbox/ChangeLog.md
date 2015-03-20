@@ -1,3 +1,11 @@
+## 0.1.3
+
+* Fix build failure with directory-1.2.2.0 which exposes findExecutables
+
+## 0.1.2
+
+* Add MIN_VERSION_mtl(2,2,1) for Control.Monad.Except
+
 ## 0.1.1
 
 * Fix bugs of both isBindable and sendToPort : I was mistaken about PortNum.

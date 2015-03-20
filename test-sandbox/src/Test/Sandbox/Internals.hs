@@ -38,7 +38,7 @@ import GHC.Generics (Generic)
 import GHC.IO.Handle
 import Network
 import Network.Socket
-import System.Directory
+import qualified System.Directory as D
 import System.Exit
 import System.FilePath
 import System.IO
@@ -484,10 +484,10 @@ findExecutables paths =
 tryBinary :: FilePath -> IO (Maybe FilePath)
 tryBinary path = do
   expandedPath <- expand path
-  canonicalizedPath <- tryIOError $ canonicalizePath expandedPath
+  canonicalizedPath <- tryIOError $ D.canonicalizePath expandedPath
   case canonicalizedPath of
-    Left _ -> findExecutable expandedPath
-    Right realPath -> findExecutable realPath
+    Left _ -> D.findExecutable expandedPath
+    Right realPath -> D.findExecutable realPath
 
 getProcessCandidateBinaries :: SandboxedProcess -> [FilePath]
 getProcessCandidateBinaries sp =
