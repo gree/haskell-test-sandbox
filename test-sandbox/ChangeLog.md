@@ -1,3 +1,7 @@
+## 0.1.3.1
+
+* Replace nc with runhaskell
+
 ## 0.1.3
 
 * Fix build failure with directory-1.2.2.0 which exposes findExecutables

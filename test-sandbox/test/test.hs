@@ -38,14 +38,29 @@ main :: IO ()
 main = withSandbox $ \gref -> do
   hspec $ do
     describe "Basic Test" $ do
-      it "Run nc : port 12181" $ do
+      it "Run server like nc : port 12181" $ do
         runSandbox' gref $ do
           file <- setFile "ncfile1"
-                  [str|#!/usr/bin/env bash
-                      |echo hoge | nc -l 12181
+                  [str|import Network
+                      |import System.IO
+                      |import Control.Monad
+                      |import Control.Concurrent
+                      |
+                      |main :: IO ()
+                      |main = withSocketsDo $ do
+                      |  let val = "hoge\n"
+                      |  sock <- listenOn $ PortNumber 12181
+                      |  forever $ do
+                      |    (handle, _host, _port) <- accept sock
+                      |    forkFinally (talk handle val) (\_ -> hClose handle)
+                      |  where
+                      |    talk h val = do
+                      |      hPutStr h val
+                      |      v <-  hGetContents h
+                      |      putStr v
                       |]
-          liftIO $ setExecuteMode file
-          start =<< register "ncserver1" file [] def { psCapture = Just CaptureStdout }
+          --liftIO $ setExecuteMode file
+          start =<< register "ncserver1" "runhaskell" [file] def { psCapture = Just CaptureStdout }
       it "isBinable' 12181" $ do
         I.isBindable' 12181 `shouldReturn` False
       it "isBinable' 12180" $ do
@@ -59,12 +74,27 @@ main = withSandbox $ \gref -> do
           p <- getPort "ncport"
           file <- setFile' "ncfile"
                   [("port",p)]
-                  [str|#!/usr/bin/env bash
-                      |echo hoge | nc -l {{port}}
+                  [str|import Network
+                      |import System.IO
+                      |import Control.Monad
+                      |import Control.Concurrent
+                      |
+                      |main :: IO ()
+                      |main = withSocketsDo $ do
+                      |  let val = "hoge\n"
+                      |  sock <- listenOn $ PortNumber {{port}}
+                      |  forever $ do
+                      |    (handle, _host, _port) <- accept sock
+                      |    forkFinally (talk handle val) (\_ -> hClose handle)
+                      |  where
+                      |    talk h val = do
+                      |      hPutStr h val
+                      |      v <-  hGetContents h
+                      |      putStr v
                       |]
           liftIO $ I.isBindable p `shouldReturn` True
-          liftIO $ setExecuteMode file
-          start =<< register "ncserver" file [] def { psCapture = Just CaptureStdout }
+          -- liftIO $ setExecuteMode file
+          start =<< register "ncserver" "runhaskell" [file] def { psCapture = Just CaptureStdout }
           liftIO $ I.isBindable p `shouldReturn` False
           sendTo "ncport" "hogehoge\n" 1 `shouldReturn` "hoge\n"
       it "interactive Test by sandbox" $ do
