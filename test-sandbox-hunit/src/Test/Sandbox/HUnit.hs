@@ -1,5 +1,7 @@
 -- author: Benjamin Surma <benjamin.surma@gmail.com>
 
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Test.Sandbox.HUnit (
     assertFailure
   , assertBool
@@ -47,5 +49,4 @@ assertException s a =
   assertBool s =<< (a >> return False) `catchError` const (return True)
 
 wrap :: Sandbox () -> Sandbox ()
-wrap action = action `catches` [ Handler hunitHandler ]
-  where hunitHandler (HUnitFailure e) = throwError e
+wrap action = action `catch` (\ (HUnitFailure e :: HUnitFailure) -> throwError e)
