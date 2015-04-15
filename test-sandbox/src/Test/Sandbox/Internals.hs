@@ -9,7 +9,9 @@
 
 module Test.Sandbox.Internals where
 
+#if __GLASGOW_HASKELL__ <= 708
 import Control.Applicative (Applicative)
+#endif
 import Control.Concurrent
 import Control.Exception.Lifted hiding (throwTo)
 import Control.Monad
