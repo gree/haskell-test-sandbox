@@ -196,7 +196,7 @@ isValidProcessName :: String -> Bool
 isValidProcessName s = not (null s)
     && isAlpha (head s)
     && all isAllowed (tail s)
-  where isAllowed c = isAlphaNum c || c == '_'
+  where isAllowed c = isAlphaNum c || ( c `elem` ['_','-','.'] )
 
 getProcess :: String -> Sandbox SandboxedProcess
 getProcess name = do
