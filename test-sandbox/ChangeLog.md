@@ -1,3 +1,7 @@
+## 0.1.4
+
+* Allow '.' and '-' for valid procsss name
+
 ## 0.1.3.1
 
 * Replace nc with runhaskell
