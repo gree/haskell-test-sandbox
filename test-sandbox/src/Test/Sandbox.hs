@@ -128,13 +128,20 @@ withSandbox actions = do
     liftIO $ actions ref
 
 -- | Optional parameters when registering a process in the Sandbox monad.
-data ProcessSettings = ProcessSettings {
+data ProcessSettings =
+  ProcessSettings {
     psWait :: Maybe Int        -- ^ Time to wait (in s.) before checking that the process is still up
   , psCapture :: Maybe Capture -- ^ Which outputs to capture (if any)
+  } |
+  ProcessSettings2 {
+    psWait :: Maybe Int              -- ^ Time to wait (in s.) before checking that the process is still up
+  , psCapture :: Maybe Capture       -- ^ Which outputs to capture (if any)
+  , psEnv :: Maybe [(String,String)] -- ^ Environment variables
+  , psCwd :: Maybe FilePath          -- ^ Working directory for the new process
   }
 
 instance Default ProcessSettings where
-  def = ProcessSettings (Just 1) Nothing
+  def = ProcessSettings2 (Just 1) Nothing Nothing Nothing
 
 -- | Registers a process in the Sandbox monad.
 register :: String          -- ^ Process name
@@ -142,7 +149,10 @@ register :: String          -- ^ Process name
          -> [String]        -- ^ Arguments to pass on the command-line
          -> ProcessSettings -- ^ Process settings
          -> Sandbox String
-register name bin args params = registerProcess name bin args (psWait params) (psCapture params) >> return name
+register name bin args (ProcessSettings wait capture) =
+  registerProcess name bin args wait capture Nothing Nothing >> return name
+register name bin args (ProcessSettings2 wait capture env cwd) =
+  registerProcess name bin args wait capture env cwd >> return name
 
 -- | Communicates with a sandboxed process via TCP and returns the answered message as a string.
 sendTo :: String         -- ^ Name of the registered port 
