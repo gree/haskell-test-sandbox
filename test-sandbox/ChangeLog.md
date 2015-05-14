@@ -1,3 +1,7 @@
+## 0.1.5
+
+* Add the function of changing environment-variables and working-directory with register-function-arguments.
+
 ## 0.1.4
 
 * Allow '.' and '-' for valid procsss name

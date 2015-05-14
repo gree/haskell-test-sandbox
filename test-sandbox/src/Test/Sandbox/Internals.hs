@@ -51,6 +51,7 @@ import System.Process hiding (env, waitForProcess, createPipe)
 #else
 import System.Process hiding (env, waitForProcess)
 #endif
+import qualified System.Process as P
 import System.Process.Internals (withProcessHandle, ProcessHandle__(OpenHandle))
 import System.Random
 import System.Random.Shuffle
@@ -121,6 +122,8 @@ data SandboxedProcess = SandboxedProcess {
   , spPid :: Maybe ProcessID
   , spPGid :: Maybe ProcessGroupID
   , spHandles :: [Handle]
+  , spEnvs :: Maybe [(String,String)]
+  , spCwd :: Maybe FilePath
   }
 
 data Capture =
@@ -175,10 +178,15 @@ newSandboxState name dir = do
       -- Do not use these area for "userPorts" to avoid conflict.
   newIORef $ SandboxState name dir M.empty [] M.empty availablePorts M.empty M.empty
 
-registerProcess ::
-  String -> FilePath -> [String] -> Maybe Int -> Maybe Capture
-  -> Sandbox SandboxedProcess
-registerProcess name bin args wait capture = do
+registerProcess :: String                  -- ^ Process Name
+                -> FilePath                -- ^ Path to the application binary
+                -> [String]                -- ^ Arguments to pass on the command-line
+                -> Maybe Int               -- ^ Time to wait (in s.) before checking that the process is still up
+                -> Maybe Capture           -- ^ Which outputs to capture (if any)
+                -> Maybe [(String,String)] -- ^ Evironment variables
+                -> Maybe FilePath          -- ^ Working directory for the new process
+                -> Sandbox SandboxedProcess
+registerProcess name bin args wait capture process_env process_cwd = do
   -- Validate process name
   unless (isValidProcessName name) $
     throwError $ "Invalid process name: " ++ name ++ "."
@@ -186,7 +194,7 @@ registerProcess name bin args wait capture = do
   env <- get
   if isJust (M.lookup name (ssProcesses env)) then
     throwError $ "Process " ++ name ++ " is already registered in the test environment."
-    else do let sp = SandboxedProcess name bin args wait capture Nothing Nothing Nothing []
+    else do let sp = SandboxedProcess name bin args wait capture Nothing Nothing Nothing [] process_env process_cwd
             _ <- put env { ssProcesses = M.insert name sp (ssProcesses env)
                          , ssProcessOrder = ssProcessOrder env ++ [name]
                          }
@@ -363,10 +371,13 @@ startProcess sp =
               hde <- openFile filepath_e WriteMode
               return (Nothing, UseHandle hdo, UseHandle hde, [hdo,hde])
         Nothing -> return (Nothing, Inherit, Inherit, [])
-      (Just ih, _, _, ph) <- liftIO $ createProcess $ (proc bin args) {create_group = True
+      (Just ih, _, _, ph) <- liftIO $ createProcess $ (proc bin args) { create_group = True
                                                                       , std_in = CreatePipe
                                                                       , std_out = hOutRW
-                                                                      , std_err = hErrRW }
+                                                                      , std_err = hErrRW
+                                                                      , cwd = spCwd sp
+                                                                      , P.env = spEnvs sp
+                                                                      }
       when (isJust $ spWait sp) $ do
         liftIO . threadDelay $ fromJust (spWait sp) * secondInµs
       errno <- liftIO $ getProcessExitCode ph
