@@ -1,6 +1,7 @@
 -- author: Benjamin Surma <benjamin.surma@gmail.com>
 
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP #-}
 
 module Test.Sandbox.HUnit (
     assertFailure
@@ -49,4 +50,8 @@ assertException s a =
   assertBool s =<< (a >> return False) `catchError` const (return True)
 
 wrap :: Sandbox () -> Sandbox ()
+#if MIN_VERSION_HUnit(1,3,0)
+wrap action = action `catch` (\ (HUnitFailure _ e :: HUnitFailure) -> throwError e)
+#else
 wrap action = action `catch` (\ (HUnitFailure e :: HUnitFailure) -> throwError e)
+#endif
