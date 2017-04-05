@@ -1,3 +1,7 @@
+## 0.1.6
+
+* Support for HUnit>=1.5
+
 ## 0.1.5
 
 * Add the function of changing environment-variables and working-directory with register-function-arguments.

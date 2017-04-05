@@ -1,5 +1,5 @@
 Name:           test-sandbox
-Version:        0.1.5
+Version:        0.1.6
 Cabal-Version:  >= 1.14
 Category:       Testing
 Synopsis:       Sandbox for system tests
@@ -28,7 +28,7 @@ Source-Repository head
 Source-Repository this
     Type:       git
     Location:   https://github.com/gree/haskell-test-sandbox
-    Tag:        test-sandbox_0.1.5
+    Tag:        test-sandbox_0.1.6
 
 Library
     Exposed-modules:    Test.Sandbox
