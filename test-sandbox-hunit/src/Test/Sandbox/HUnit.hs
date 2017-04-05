@@ -16,7 +16,12 @@ import Test.Sandbox
 import Control.Exception.Lifted
 
 import qualified Test.HUnit
+
+#if MIN_VERSION_HUnit(1,5,0)
+import Test.HUnit.Lang (HUnitFailure (..), formatFailureReason)
+#else
 import Test.HUnit.Lang (HUnitFailure (..))
+#endif
 
 -- | Unconditionally signals that a failure has occured.
 assertFailure :: String     -- ^ A message that is displayed with the assertion failure
@@ -50,7 +55,9 @@ assertException s a =
   assertBool s =<< (a >> return False) `catchError` const (return True)
 
 wrap :: Sandbox () -> Sandbox ()
-#if MIN_VERSION_HUnit(1,3,0)
+#if MIN_VERSION_HUnit(1,5,0)
+wrap action = action `catch` (\ (HUnitFailure _ e :: HUnitFailure) -> throwError $ formatFailureReason e)
+#elif MIN_VERSION_HUnit(1,3,0)
 wrap action = action `catch` (\ (HUnitFailure _ e :: HUnitFailure) -> throwError e)
 #else
 wrap action = action `catch` (\ (HUnitFailure e :: HUnitFailure) -> throwError e)
