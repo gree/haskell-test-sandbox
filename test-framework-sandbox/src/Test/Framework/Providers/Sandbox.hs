@@ -97,9 +97,9 @@ sandboxTest name test = withTest name $ do
         exitHandler = throw
         interruptHandler :: AsyncException -> Sandbox a
         interruptHandler UserInterrupt = liftIO exitFailure
-        interruptHandler e = Sandbox . throwError $ show e
+        interruptHandler e = throwError $ show e
         otherHandler :: SomeException -> Sandbox a
-        otherHandler = Sandbox . throwError . show
+        otherHandler = throwError . show
 
 -- | Displays a progress update during a test.
 yieldProgress :: String     -- ^ Text to display

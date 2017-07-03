@@ -182,8 +182,12 @@ main = withSandbox $ \gref -> do
           liftIO $ threadDelay $ 1 * 1000 * 1000
           liftIO $ (length pids >= 4) `shouldBe` True
         ref' <- readIORef val
-        pids <- runSandbox' ref' $ I.getAvailablePids
-        length pids `shouldBe` 0
+        let chkpid  :: IO Int
+            chkpid = do
+              threadDelay (5 * 1000 * 1000)
+              pids <- runSandbox' ref' $ I.getAvailablePids
+              return $ length pids
+        chkpid `shouldReturn` 0
 
       it "send kill signal for process groups" $ do
         sandbox "test" $ do

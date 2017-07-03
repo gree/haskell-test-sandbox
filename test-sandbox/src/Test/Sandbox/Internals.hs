@@ -15,18 +15,16 @@ import Control.Applicative (Applicative)
 import Control.Concurrent
 import Control.Exception.Lifted hiding (throwTo)
 import Control.Monad
-import Control.Monad.Base (MonadBase)
 #if MIN_VERSION_mtl(2,2,1)
-import Control.Monad.Except (MonadError, catchError, throwError)
+import Control.Monad.Except (catchError, throwError)
 import Control.Monad.Trans.Except (ExceptT, runExceptT)
 #else
-import Control.Monad.Error (MonadError, catchError, throwError)
+import Control.Monad.Error (catchError, throwError)
 import Control.Monad.Trans.Error (ErrorT, runErrorT)
 #endif
 import Control.Monad.Loops
-import Control.Monad.Reader (MonadReader, ask)
-import Control.Monad.Trans (MonadIO, liftIO)
-import Control.Monad.Trans.Control (MonadBaseControl (..))
+import Control.Monad.Reader (ask)
+import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as B
@@ -57,39 +55,13 @@ import System.Random
 import System.Random.Shuffle
 import Test.Sandbox.Process
 
-#if MIN_VERSION_mtl(2,2,1)
-type ExceptT' = ExceptT
-runExceptT' :: ExceptT e m a -> m (Either e a)
-runExceptT' = runExceptT
-#else
-runExceptT' :: ErrorT e m a -> m (Either e a)
-type ExceptT' = ErrorT
-runExceptT' = runErrorT
-#endif
-
-
 type Port = Int
 type SandboxStateRef = IORef SandboxState
 
-newtype Sandbox a = Sandbox {
-    runSB :: ExceptT' String (ReaderT SandboxStateRef IO) a
-  } deriving (Applicative, Functor, Monad, MonadBase IO, MonadError String, MonadReader (IORef SandboxState), MonadIO)
-
-#if MIN_VERSION_monad_control(1,0,0)
-newtype StMSandbox a = StMSandbox { runStMSandbox :: StM (ExceptT' String (ReaderT SandboxStateRef IO)) a }
-#endif
-
-instance MonadBaseControl IO Sandbox where
-#if MIN_VERSION_monad_control(1,0,0)
-  type StM Sandbox a = StMSandbox a
-#else
-  newtype StM Sandbox a = StMSandbox { runStMSandbox :: StM (ExceptT' String (ReaderT SandboxStateRef IO)) a }
-#endif
-  liftBaseWith f = Sandbox . liftBaseWith $ \run -> f (liftM StMSandbox . run . runSB)
-  restoreM = Sandbox . restoreM . runStMSandbox
+type Sandbox = ExceptT String (ReaderT SandboxStateRef IO)
 
 runSandbox :: Sandbox a -> SandboxStateRef -> IO (Either String a)
-runSandbox = runReaderT . runExceptT' . runSB
+runSandbox = runReaderT . runExceptT
 
 errorHandler :: String -> IO a
 errorHandler error' = do
@@ -497,10 +469,14 @@ findExecutables paths =
 tryBinary :: FilePath -> IO (Maybe FilePath)
 tryBinary path = do
   expandedPath <- expand path
-  canonicalizedPath <- tryIOError $ D.canonicalizePath expandedPath
-  case canonicalizedPath of
-    Left _ -> D.findExecutable expandedPath
-    Right realPath -> D.findExecutable realPath
+  mexe <- D.findExecutable expandedPath
+  case mexe of
+    Nothing -> return Nothing
+    Just path' -> do
+      canonicalizedPath <- tryIOError $ D.canonicalizePath path'
+      case canonicalizedPath of
+        Left _ -> return Nothing
+        Right realPath -> return $ Just realPath
 
 getProcessCandidateBinaries :: SandboxedProcess -> [FilePath]
 getProcessCandidateBinaries sp =
