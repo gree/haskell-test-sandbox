@@ -1,3 +1,8 @@
+## 0.1.7
+
+* Support for ghc8
+* Simplify Sandbox-Monad
+
 ## 0.1.6
 
 * Support for HUnit>=1.5
