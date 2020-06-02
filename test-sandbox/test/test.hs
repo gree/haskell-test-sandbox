@@ -2,6 +2,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE OverloadedStrings #-}
 import Test.Hspec hiding (shouldReturn,shouldBe)
 import Test.Hspec.Expectations.Lifted
 import Test.QuickCheck
@@ -19,6 +20,14 @@ import System.Exit (ExitCode(..))
 import Data.IORef
 import Data.Char
 import Control.Concurrent
+import Data.String.Conversions
+
+import Network.Socket
+import Network.Socket.ByteString (sendAll,recv)
+import Network.Run.TCP
+import System.IO
+import Control.Monad
+
 
 a2b :: String -> String
 a2b [] = []
@@ -34,6 +43,16 @@ a2btest' ref str' =
     v <- liftIO $ runSandbox' ref $ interactWith "sed_regex" (str' ++ "\n") 1
     assert $ v == ((a2b str') ++ "\n")
 
+mainEcho :: IO ()
+mainEcho = do
+  let val = "hoge\n"
+  runTCPServer Nothing "12181" (talk val)
+  where
+    talk val s = do
+      sendAll s val
+      msg <- recv s 1024
+      sendAll s msg
+
 main :: IO ()
 main = withSandbox $ \gref -> do
   hspec $ do
@@ -41,26 +60,22 @@ main = withSandbox $ \gref -> do
       it "Run server like nc : port 12181" $ do
         runSandbox' gref $ do
           file <- setFile "ncfile1"
-                  [str|import Network
-                      |import System.IO
-                      |import Control.Monad
-                      |import Control.Concurrent
-                      |
-                      |main :: IO ()
-                      |main = withSocketsDo $ do
+                  [str|{-# LANGUAGE OverloadedStrings #-}
+                      |import qualified Data.ByteString as B
+                      |import Network.Socket.ByteString
+                      |import Network.Socket
+                      |import Network.Run.TCP
+                      |main = do
                       |  let val = "hoge\n"
-                      |  sock <- listenOn $ PortNumber 12181
-                      |  forever $ do
-                      |    (handle, _host, _port) <- accept sock
-                      |    forkFinally (talk handle val) (\_ -> hClose handle)
+                      |  runTCPServer Nothing "12181" (talk val)
                       |  where
-                      |    talk h val = do
-                      |      hPutStr h val
-                      |      v <-  hGetContents h
-                      |      putStr v
+                      |    talk val s = do
+                      |      sendAll s val
+                      |      msg <- recv s 1024
+                      |      B.putStr msg
                       |]
           --liftIO $ setExecuteMode file
-          start =<< register "ncserver1" "runhaskell" [file] def { psCapture = Just CaptureStdout }
+          start =<< register "ncserver1" "runghc" [file] def { psCapture = Just CaptureStdout }
       it "isBinable' 12181" $ do
         I.isBindable' 12181 `shouldReturn` False
       it "isBinable' 12180" $ do
@@ -74,27 +89,23 @@ main = withSandbox $ \gref -> do
           p <- getPort "ncport"
           file <- setFile' "ncfile"
                   [("port",p)]
-                  [str|import Network
-                      |import System.IO
-                      |import Control.Monad
-                      |import Control.Concurrent
-                      |
-                      |main :: IO ()
-                      |main = withSocketsDo $ do
+                  [str|{-# LANGUAGE OverloadedStrings #-}
+                      |import qualified Data.ByteString as B
+                      |import Network.Socket.ByteString
+                      |import Network.Socket
+                      |import Network.Run.TCP
+                      |main = do
                       |  let val = "hoge\n"
-                      |  sock <- listenOn $ PortNumber {{port}}
-                      |  forever $ do
-                      |    (handle, _host, _port) <- accept sock
-                      |    forkFinally (talk handle val) (\_ -> hClose handle)
+                      |  runTCPServer Nothing "{{port}}" (talk val)
                       |  where
-                      |    talk h val = do
-                      |      hPutStr h val
-                      |      v <-  hGetContents h
-                      |      putStr v
+                      |    talk val s = do
+                      |      sendAll s val
+                      |      msg <- recv s 1024
+                      |      B.putStr msg
                       |]
           liftIO $ I.isBindable p `shouldReturn` True
           -- liftIO $ setExecuteMode file
-          start =<< register "ncserver" "runhaskell" [file] def { psCapture = Just CaptureStdout }
+          start =<< register "ncserver" "runghc" [file] def { psCapture = Just CaptureStdout }
           liftIO $ I.isBindable p `shouldReturn` False
           sendTo "ncport" "hogehoge\n" 1 `shouldReturn` "hoge\n"
       it "interactive Test by sandbox" $ do
@@ -256,7 +267,7 @@ setFile' filename keyValues template  = do
           H.defaultConfig
           (H.encodeStr template)
           (H.mkStrContext context')
-  setFile filename $ T.unpack $ TL.toStrict str'
+  setFile filename $ cs str'
   where
     context' str' = (M.fromList (map (\(k,v) -> (k,H.MuVariable v)) keyValues)) M.! str'
 
