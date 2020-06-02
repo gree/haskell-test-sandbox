@@ -47,6 +47,7 @@ Library
                       , monad-loops
                       , mtl
                       , network
+                      , network-bsd
                       , process
                       , random
                       , random-shuffle
@@ -61,7 +62,7 @@ Library
     Default-Language:   Haskell2010
     ghc-options:       -Wall
 
-test-suite test
+Test-Suite test
     type:              exitcode-stdio-1.0
     main-is:           test.hs
     hs-source-dirs:    test,dist/build/autogen
@@ -84,4 +85,7 @@ test-suite test
                  , directory
                  , process
                  , QuickCheck
+                 , string-conversions
+                 , network
+                 , network-run
     Default-Language:   Haskell2010
