@@ -1,4 +1,4 @@
-resolver: lts-7.20
+resolver: nightly-2021-10-19
 
 packages:
 - 'test-sandbox'
@@ -10,10 +10,15 @@ packages:
 # (e.g., acme-missiles-0.3)
 extra-deps:
 - 'hspec-expectations-lifted-0.5.0'
+- git: https://github.com/junjihashimoto/hastache.git
+  commit: 0547036f2b3f5d48431ce2d2bd4eb91e87ffc980
+
 
 # Override default flag values for local packages and extra-deps
 flags: {}
 
 # Extra package databases containing global packages
 extra-package-dbs: []
+
+allow-newer: true
 
