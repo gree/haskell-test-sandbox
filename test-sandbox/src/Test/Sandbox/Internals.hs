@@ -36,8 +36,8 @@ import Data.Maybe
 import Data.Serialize (Serialize, decode, encode)
 import GHC.Generics (Generic)
 import GHC.IO.Handle
-import Network
-import Network.Socket
+import Network.Socket as N
+import qualified Network.BSD as BSD
 import qualified System.Directory as D
 import System.Exit
 import System.FilePath
@@ -59,6 +59,8 @@ type Port = Int
 type SandboxStateRef = IORef SandboxState
 
 type Sandbox = ExceptT String (ReaderT SandboxStateRef IO)
+
+data PortID = PortNumber N.PortNumber
 
 runSandbox :: Sandbox a -> SandboxStateRef -> IO (Either String a)
 runSandbox = runReaderT . runExceptT
@@ -230,6 +232,28 @@ hReadWithTimeout h timeout = do
                                          liftM not $ hIsEOF h
                    else return True
 
+
+connectTo :: N.HostName         -- Hostname
+          -> PortID             -- Port Identifier
+          -> IO Handle          -- Connected Socket
+connectTo hostname (PortNumber port) = do
+    proto <- BSD.getProtocolNumber "tcp"
+    bracketOnError
+        (N.socket N.AF_INET N.Stream proto)
+        (N.close)  -- only done if there's an error
+        (\sock -> do
+          he <- BSD.getHostByName hostname
+          N.connect sock (N.SockAddrInet port (BSD.hostAddress he))
+          N.socketToHandle sock ReadWriteMode
+        )
+
+inet_addr :: N.HostName -> IO HostAddress
+inet_addr hostname = do
+  let hints = defaultHints { addrFlags = [AI_NUMERICHOST], addrSocketType = Stream }
+  addr:_ <- getAddrInfo (Just hints) (Just hostname) Nothing
+  let SockAddrInet _ address = addrAddress addr
+  return address
+
 sendToPort :: String -> String -> Int -> Sandbox String
 sendToPort name input timeout = do
   env <- get
@@ -262,7 +286,7 @@ isBindable' p = withSocketsDo $ do
   setSocketOption s ReuseAddr 1
   localhost <- inet_addr "127.0.0.1"
   let sa = SockAddrInet (fromIntegral p) localhost
-  r <- (bind s sa >> isBound s)
+  r <- (bind s sa >> return True)
          `catch` ((\_ -> return False) :: SomeException -> IO Bool)
   close s
   return $! r
