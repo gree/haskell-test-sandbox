@@ -13,7 +13,6 @@ extra-deps:
 - git: https://github.com/junjihashimoto/hastache.git
   commit: 0547036f2b3f5d48431ce2d2bd4eb91e87ffc980
 
-
 # Override default flag values for local packages and extra-deps
 flags: {}
 

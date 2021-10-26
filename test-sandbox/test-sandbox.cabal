@@ -74,7 +74,7 @@ Test-Suite test
                  , hspec-expectations-lifted
                  , template-haskell
                  , heredoc
-                 , hastache
+                 , stache
                  , text
                  , containers
                  , unix
@@ -88,4 +88,5 @@ Test-Suite test
                  , string-conversions
                  , network
                  , network-run
+                 , aeson
     Default-Language:   Haskell2010

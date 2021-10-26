@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 import Test.Hspec hiding (shouldReturn,shouldBe)
 import Test.Hspec.Expectations.Lifted
 import Test.QuickCheck
@@ -10,8 +11,7 @@ import Test.QuickCheck.Monadic (assert,monadicIO)
 import Test.Sandbox
 import qualified Test.Sandbox.Internals as I
 import Text.Heredoc
-import qualified Text.Hastache as H
-import qualified Text.Hastache.Context as H
+import qualified Text.Mustache as H
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text as T
 import qualified Data.Map as M
@@ -27,6 +27,8 @@ import Network.Socket.ByteString (sendAll,recv)
 import Network.Run.TCP
 import System.IO
 import Control.Monad
+import Data.Aeson
+import Data.Aeson.Types (Pair)
 
 
 a2b :: String -> String
@@ -88,7 +90,7 @@ main = withSandbox $ \gref -> do
         runSandbox' gref $ do
           p <- getPort "ncport"
           file <- setFile' "ncfile"
-                  [("port",p)]
+                  [("port",toJSON p)]
                   [str|{-# LANGUAGE OverloadedStrings #-}
                       |import qualified Data.ByteString as B
                       |import Network.Socket.ByteString
@@ -178,7 +180,7 @@ main = withSandbox $ \gref -> do
                       |]
           liftIO $ setExecuteMode file
           fil2 <- setFile' "str2"
-                  [("file",file)]
+                  [("file",toJSON file)]
                   [str|#!/usr/bin/env bash
                       |trap "echo catch signal" 1 2 3 15
                       |{{file}}&
@@ -210,7 +212,7 @@ main = withSandbox $ \gref -> do
                       |]
           liftIO $ setExecuteMode file
           fil2 <- setFile' "str2"
-                  [("file",file)]
+                  [("file",toJSON file)]
                   [str|#!/usr/bin/env bash
                       |trap "echo catch signal" 1 2 3 15
                       |{{file}}&
@@ -233,7 +235,7 @@ main = withSandbox $ \gref -> do
                       |]
           liftIO $ setExecuteMode file
           fil2 <- setFile' "str2"
-                  [("file",file)]
+                  [("file",toJSON file)]
                   [str|#!/usr/bin/env bash
                       |trap "echo catch signal" 1 2 3 15
                       |{{file}}&
@@ -258,19 +260,16 @@ main = withSandbox $ \gref -> do
         length pids' `shouldBe` 0
 #endif
 
-setFile' :: H.MuVar a
-         => String
-         -> [(String, a)]
+setFile' :: String
+         -> [Pair]
          -> String
          -> Sandbox FilePath
 setFile' filename keyValues template  = do
-  str' <- H.hastacheStr
-          H.defaultConfig
-          (H.encodeStr template)
-          (H.mkStrContext context')
+  str' <- case (H.compileMustacheText (H.PName (cs filename)) (cs template)) of 
+    Left err -> fail $ show err
+    Right template -> do
+      return $ H.renderMustache template (object keyValues)
   setFile filename $ cs str'
-  where
-    context' str' = (M.fromList (map (\(k,v) -> (k,H.MuVariable v)) keyValues)) M.! str'
 
 setExecuteMode :: FilePath -> IO ()
 setExecuteMode file = do
