@@ -37,7 +37,7 @@ a2b ('a':xs) = 'b':xs
 a2b (x:xs) = x:a2b xs
 
 a2btest :: I.SandboxStateRef -> [Char] -> Property
-a2btest ref str' = a2btest' ref $ filter isAlphaNum str'
+a2btest ref str' = a2btest' ref $ filter (\c -> isAlphaNum c && isAscii c) str'
 
 a2btest' :: I.SandboxStateRef -> [Char] -> Property
 a2btest' ref str' =
@@ -126,9 +126,8 @@ main = withSandbox $ \gref -> do
           start =<< register "sed_regex" "sed" [ "-u", "s/a/b/" ] def { psCapture = Just CaptureStdout }
           interactWith "sed_regex" "a\n" 1
         val `shouldBe` "b\n"
---     ToDo: This test fails in local linux. 
---      it "interactive Test : QuickCheck(run)" $
---        property $ a2btest gref
+      it "interactive Test : QuickCheck(run)" $
+        property $ a2btest gref
       it "setFile" $ do
         withSandbox $ \ref -> do
           let content =
