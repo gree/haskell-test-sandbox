@@ -42,7 +42,6 @@ a2btest ref str' = a2btest' ref $ filter (\c -> isAlphaNum c && isAscii c) str'
 a2btest' :: I.SandboxStateRef -> [Char] -> Property
 a2btest' ref str' =
   monadicIO $ do
-    liftIO $ print str'
     v <- liftIO $ runSandbox' ref $ interactWith "sed_regex" (str' ++ "\n") 1
     assert $ v == ((a2b str') ++ "\n")
 
